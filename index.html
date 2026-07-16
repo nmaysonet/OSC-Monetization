@@ -843,7 +843,7 @@
         </div>
         <div class="field">
           <label for="editPassword">Edit Password</label>
-          <input id="editPassword" type="password" autocomplete="off"
+          <input id="editPassword" type="password" autocomplete="current-password" spellcheck="false"
                  onkeypress="if(event.key === 'Enter') unlockEditing()">
         </div>
         <div id="unlockError" class="form-error">Incorrect edit password.</div>
@@ -916,7 +916,7 @@
     const VRO_FILE = "VRO Export.xlsx";
     const MANUAL_CUSTOMERS_PATH = "oscMonetization/manualCustomers";
     const AUTO_REFRESH_MS = 15 * 60 * 1000;
-    const EDIT_PASSWORD_HASH = "acaf7bb295b74f4d3febaaf6b84a2e6f951ac9ee27ec7da2361d41eb9548e750";
+    const EDIT_PASSWORD = "Password 123!";
 
     const FIREBASE_CONFIG = {
       apiKey: "AIzaSyCr3VAldI-pPCb7APx3rJAEZvf_nl0iz1g",
@@ -1360,13 +1360,6 @@
       };
     }
 
-    async function sha256(value) {
-      const bytes = new TextEncoder().encode(value);
-      const digest = await crypto.subtle.digest("SHA-256", bytes);
-      return [...new Uint8Array(digest)]
-        .map(byte => byte.toString(16).padStart(2, "0"))
-        .join("");
-    }
 
     async function fetchWorkbookBuffer(fileName) {
       const configuredBucket = firebase.app().options.storageBucket;
@@ -2070,16 +2063,23 @@
       setTimeout(() => document.getElementById("editPassword").focus(), 50);
     }
 
-    async function unlockEditing() {
-      const digest = await sha256(document.getElementById("editPassword").value);
+    function unlockEditing() {
+      const passwordField = document.getElementById("editPassword");
+      const enteredPassword = passwordField.value.trim();
+      const error = document.getElementById("unlockError");
 
-      if (digest !== EDIT_PASSWORD_HASH) {
-        document.getElementById("unlockError").style.display = "block";
+      error.style.display = "none";
+
+      if (enteredPassword !== EDIT_PASSWORD) {
+        error.style.display = "block";
+        passwordField.focus();
+        passwordField.select();
         return;
       }
 
       EDIT_UNLOCKED = true;
       sessionStorage.setItem("oscMonetizationEditUnlocked", "1");
+      passwordField.value = "";
       closeModal("unlockModal");
       updateEditControls();
       renderConfigTable();
