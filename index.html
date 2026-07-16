@@ -335,7 +335,8 @@
       font-size:12px;
     }
 
-    .report-table, .config-table { min-width:1450px; }
+    .report-table { min-width:1450px; }
+    .config-table { min-width:1450px; }
 
     thead th {
       position:sticky;
@@ -411,6 +412,25 @@
       background:#26323f!important;
       color:#fff;
       font-weight:900;
+    }
+
+    .segment-summary-row td {
+      background:#e8edf2!important;
+      color:#20262d;
+      font-weight:900;
+      border-bottom:1px solid #b9c4cf;
+    }
+
+    .report-spacer-row td {
+      height:16px;
+      padding:0!important;
+      background:#f4f6f9!important;
+      border:none!important;
+    }
+
+    .report-detail-row td:nth-child(1) {
+      text-align:left;
+      font-weight:800;
     }
 
     .num { text-align:right!important; }
@@ -974,7 +994,6 @@
     const CURRENT_STAGE_TERMS = [
       "closed won",
       "closed-won",
-      "signed",
       "live"
     ];
 
@@ -989,6 +1008,18 @@
       { key:"fixedFeeWeeklyBilling", label:"Fixed Fee Weekly Billing", width:135, type:"money" },
       { key:"handlingFeePerCall", label:"Handling Fee ($ / Call)", width:130, type:"money" },
       { key:"markup", label:"Markup", width:90, type:"percent" }
+    ];
+
+    const REPORT_COLUMNS = [
+      { key:"segmentOrCustomer", label:"Customer Segment", width:220 },
+      { key:"uniqueCustomersOrService", label:"# of Unique Customers", width:130 },
+      { key:"combinationsOrStatus", label:"# of Customer / Serivce Combinations", width:170 },
+      { key:"forecastedAnnualDemand", label:"Forecasted Annual Demand", width:140, type:"integer" },
+      { key:"forecastedAnnualRevenue", label:"Forecasted Annual Revenue", width:155, type:"money" },
+      { key:"forecastedAnnualMarginDollars", label:"Forecated Annual Margin $", width:155, type:"money" },
+      { key:"forecastedMarginPct", label:"Forecasted Margin %", width:120, type:"percent" },
+      { key:"annualizedCurrentRevenueRunRate", label:"Annualized Current Revenue Run Rate", width:175, type:"money" },
+      { key:"annualizedCurrentDemandRate", label:"Annualized Current Demand Rate (VRO)", width:175, type:"integer" }
     ];
 
     let REPORT_ROWS = [];
@@ -1423,7 +1454,7 @@
         markup:findHeader(headers, ["Markup"])
       };
 
-      const customers = new Map();
+      const combinations = new Map();
 
       for (const row of rows.slice(headerIndex + 1)) {
         if (normalize(valueAt(row, index.solution)) !== "fleet solutions") continue;
@@ -1437,38 +1468,49 @@
         const services = standardServiceTypes(valueAt(row, index.service));
         if (!services.length) continue;
 
-        const key = customerCore(customer);
-
-        if (!customers.has(key)) {
-          customers.set(key, {
-            customer,
-            services:new Set(),
-            statuses:new Set(),
-            totalEstimatedDemand:0,
-            annualEstimatedRevenue:0,
-            annualEstimatedMarginDollars:0,
-            fixedFeeWeeklyBilling:0,
-            handlingFees:[],
-            markups:[]
-          });
-        }
-
-        const item = customers.get(key);
-        services.forEach(service => item.services.add(service));
-        item.statuses.add(status);
-        item.totalEstimatedDemand += numberOrZero(valueAt(row, index.demand));
-        item.annualEstimatedRevenue += numberOrZero(valueAt(row, index.amount));
-        item.annualEstimatedMarginDollars += numberOrZero(valueAt(row, index.marginDollars));
-        item.fixedFeeWeeklyBilling += numberOrZero(valueAt(row, index.fixedWeekly));
-
+        /*
+          When one Salesforce opportunity contains more than one service selection,
+          its forecast totals are divided across the selected services so the report
+          does not duplicate the booked value.
+        */
+        const allocation = 1 / services.length;
+        const demand = numberOrZero(valueAt(row, index.demand)) * allocation;
+        const revenue = numberOrZero(valueAt(row, index.amount)) * allocation;
+        const marginDollars = numberOrZero(valueAt(row, index.marginDollars)) * allocation;
+        const fixedWeekly = numberOrZero(valueAt(row, index.fixedWeekly)) * allocation;
         const handling = safeNumber(valueAt(row, index.handlingFee));
         const markup = safeNumber(valueAt(row, index.markup));
 
-        if (handling !== null) item.handlingFees.push(handling);
-        if (markup !== null) item.markups.push(markup);
+        for (const service of services) {
+          const key = `${customerCore(customer)}|${service}`;
+
+          if (!combinations.has(key)) {
+            combinations.set(key, {
+              customer,
+              serviceType:service,
+              statuses:new Set(),
+              totalEstimatedDemand:0,
+              annualEstimatedRevenue:0,
+              annualEstimatedMarginDollars:0,
+              fixedFeeWeeklyBilling:0,
+              handlingFees:[],
+              markups:[]
+            });
+          }
+
+          const item = combinations.get(key);
+          item.statuses.add(status);
+          item.totalEstimatedDemand += demand;
+          item.annualEstimatedRevenue += revenue;
+          item.annualEstimatedMarginDollars += marginDollars;
+          item.fixedFeeWeeklyBilling += fixedWeekly;
+
+          if (handling !== null) item.handlingFees.push(handling);
+          if (markup !== null) item.markups.push(markup);
+        }
       }
 
-      return customers;
+      return combinations;
     }
 
     function parseVro(rows) {
@@ -1574,26 +1616,29 @@
       const handlingRevenue = actual.annualizedDemand * handlingFee;
       const fixedFeeRevenue = fixedWeekly * 52;
 
-      const annualRevenue =
+      const currentRevenueRunRate =
         actual.annualizedBaseSpend +
         markupMargin +
         handlingRevenue +
         fixedFeeRevenue;
 
-      const annualMargin =
-        markupMargin +
-        handlingRevenue +
-        fixedFeeRevenue;
+      const forecastRevenue = safeNumber(settings?.annualEstimatedRevenue);
+      const forecastMargin = safeNumber(settings?.annualEstimatedMarginDollars);
 
       return {
         customer,
         group:"Current OSC Customers",
         serviceType:service,
+        serviceTypes:[service],
         dealStatus:status,
-        totalEstimatedDemand:actual.annualizedDemand,
-        annualEstimatedRevenue:annualRevenue,
-        annualEstimatedMarginDollars:annualMargin,
-        estimatedMarginPct:annualRevenue ? annualMargin / annualRevenue * 100 : null,
+        totalEstimatedDemand:safeNumber(settings?.totalEstimatedDemand),
+        annualEstimatedRevenue:forecastRevenue,
+        annualEstimatedMarginDollars:forecastMargin,
+        estimatedMarginPct:forecastRevenue && forecastMargin !== null
+          ? forecastMargin / forecastRevenue * 100
+          : null,
+        annualizedCurrentRevenueRunRate:currentRevenueRunRate,
+        annualizedCurrentDemandRate:actual.annualizedDemand,
         fixedFeeWeeklyBilling:fixedWeekly || null,
         handlingFeePerCall:handlingFee || null,
         markup:markupPct || null,
@@ -1608,63 +1653,56 @@
       for (const item of SALESFORCE_CUSTOMERS.values()) {
         if (findManualRecord(item.customer)) continue;
 
-        const services = [...item.services];
-        const serviceDisplay = displayServices(item.services);
+        const service = item.serviceType;
         const status = displayStatuses(item.statuses);
-        const actual = getActuals(item.customer, services);
+        const actual = getActuals(item.customer, [service]);
         const current = actual.demand > 0 || [...item.statuses].some(isCurrentStage);
+        const markupPct = average(item.markups) || 0;
+        const handlingFee = average(item.handlingFees) || 0;
+        const fixedWeekly = item.fixedFeeWeeklyBilling || 0;
+
+        const forecastMargin =
+          item.annualEstimatedMarginDollars ||
+          (item.annualEstimatedRevenue
+            ? item.annualEstimatedRevenue * markupPct / 100
+            : 0);
+
+        let currentRevenueRunRate = null;
+        let currentDemandRate = null;
 
         if (current) {
-          const markupPct = average(item.markups) || 0;
-          const handlingFee = average(item.handlingFees) || 0;
-          const fixedWeekly = item.fixedFeeWeeklyBilling || 0;
           const markupMargin = actual.annualizedBaseSpend * markupPct / 100;
           const handlingRevenue = actual.annualizedDemand * handlingFee;
           const fixedRevenue = fixedWeekly * 52;
-          const revenue =
-            actual.annualizedBaseSpend + markupMargin + handlingRevenue + fixedRevenue;
-          const margin = markupMargin + handlingRevenue + fixedRevenue;
 
-          rows.push({
-            customer:item.customer,
-            group:"Current OSC Customers",
-            serviceType:serviceDisplay,
-            serviceTypes:services,
-            dealStatus:status,
-            totalEstimatedDemand:actual.annualizedDemand,
-            annualEstimatedRevenue:revenue,
-            annualEstimatedMarginDollars:margin,
-            estimatedMarginPct:revenue ? margin / revenue * 100 : null,
-            fixedFeeWeeklyBilling:fixedWeekly || null,
-            handlingFeePerCall:handlingFee || null,
-            markup:markupPct || null,
-            source:"salesforce"
-          });
-        } else {
-          const margin =
-            item.annualEstimatedMarginDollars ||
-            (item.annualEstimatedRevenue
-              ? item.annualEstimatedRevenue * (average(item.markups) || 0) / 100
-              : 0);
+          currentRevenueRunRate =
+            actual.annualizedBaseSpend +
+            markupMargin +
+            handlingRevenue +
+            fixedRevenue;
 
-          rows.push({
-            customer:item.customer,
-            group:"Incremental OSC Customers",
-            serviceType:serviceDisplay,
-            serviceTypes:services,
-            dealStatus:status,
-            totalEstimatedDemand:item.totalEstimatedDemand || null,
-            annualEstimatedRevenue:item.annualEstimatedRevenue || null,
-            annualEstimatedMarginDollars:margin || null,
-            estimatedMarginPct:item.annualEstimatedRevenue && margin
-              ? margin / item.annualEstimatedRevenue * 100
-              : null,
-            fixedFeeWeeklyBilling:item.fixedFeeWeeklyBilling || null,
-            handlingFeePerCall:average(item.handlingFees),
-            markup:average(item.markups),
-            source:"salesforce"
-          });
+          currentDemandRate = actual.annualizedDemand;
         }
+
+        rows.push({
+          customer:item.customer,
+          group:current ? "Current OSC Customers" : "Incremental OSC Customers",
+          serviceType:service,
+          serviceTypes:[service],
+          dealStatus:status,
+          totalEstimatedDemand:item.totalEstimatedDemand || null,
+          annualEstimatedRevenue:item.annualEstimatedRevenue || null,
+          annualEstimatedMarginDollars:forecastMargin || null,
+          estimatedMarginPct:item.annualEstimatedRevenue && forecastMargin
+            ? forecastMargin / item.annualEstimatedRevenue * 100
+            : null,
+          annualizedCurrentRevenueRunRate:currentRevenueRunRate,
+          annualizedCurrentDemandRate:currentDemandRate,
+          fixedFeeWeeklyBilling:fixedWeekly || null,
+          handlingFeePerCall:handlingFee || null,
+          markup:markupPct || null,
+          source:"salesforce"
+        });
       }
 
       return rows;
@@ -1698,6 +1736,7 @@
               customer,
               group:"Incremental OSC Customers",
               serviceType:service,
+              serviceTypes:[service],
               dealStatus:status,
               totalEstimatedDemand:safeNumber(settings.totalEstimatedDemand),
               annualEstimatedRevenue:annualRevenue,
@@ -1705,6 +1744,8 @@
               estimatedMarginPct:annualRevenue && annualMargin !== null
                 ? annualMargin / annualRevenue * 100
                 : null,
+              annualizedCurrentRevenueRunRate:null,
+              annualizedCurrentDemandRate:null,
               fixedFeeWeeklyBilling:safeNumber(settings.fixedFeeWeeklyBilling),
               handlingFeePerCall:safeNumber(settings.handlingFeePerCall),
               markup:safeNumber(settings.markup),
@@ -1753,58 +1794,116 @@
       return `<td class="${column.type ? "num" : ""}">${formatValue(row, column)}</td>`;
     }
 
-    function totals(rows) {
-      const total = {
-        totalEstimatedDemand:0,
-        annualEstimatedRevenue:0,
-        annualEstimatedMarginDollars:0,
-        fixedFeeWeeklyBilling:0
+    function reportFormatValue(value, type) {
+      if (type === "money") return money(value, 0);
+      if (type === "integer") return integer(value);
+      if (type === "percent") return percent(value);
+      return escapeText(value || "");
+    }
+
+    function segmentMetrics(label, rows, includeActuals) {
+      const forecastedAnnualDemand = rows.reduce(
+        (sum, row) => sum + (Number(row.totalEstimatedDemand) || 0), 0
+      );
+      const forecastedAnnualRevenue = rows.reduce(
+        (sum, row) => sum + (Number(row.annualEstimatedRevenue) || 0), 0
+      );
+      const forecastedAnnualMarginDollars = rows.reduce(
+        (sum, row) => sum + (Number(row.annualEstimatedMarginDollars) || 0), 0
+      );
+      const annualizedCurrentRevenueRunRate = rows.reduce(
+        (sum, row) => sum + (Number(row.annualizedCurrentRevenueRunRate) || 0), 0
+      );
+      const annualizedCurrentDemandRate = rows.reduce(
+        (sum, row) => sum + (Number(row.annualizedCurrentDemandRate) || 0), 0
+      );
+
+      return {
+        segmentOrCustomer:label,
+        uniqueCustomersOrService:new Set(rows.map(row => customerCore(row.customer))).size,
+        combinationsOrStatus:rows.length,
+        forecastedAnnualDemand,
+        forecastedAnnualRevenue,
+        forecastedAnnualMarginDollars,
+        forecastedMarginPct:forecastedAnnualRevenue
+          ? forecastedAnnualMarginDollars / forecastedAnnualRevenue * 100
+          : null,
+        annualizedCurrentRevenueRunRate:includeActuals
+          ? annualizedCurrentRevenueRunRate
+          : null,
+        annualizedCurrentDemandRate:includeActuals
+          ? annualizedCurrentDemandRate
+          : null
+      };
+    }
+
+    function segmentSummaryRow(metrics) {
+      return `
+        <tr class="segment-summary-row">
+          ${REPORT_COLUMNS.map(column => `
+            <td class="${column.type ? "num" : ""}">
+              ${reportFormatValue(metrics[column.key], column.type)}
+            </td>
+          `).join("")}
+        </tr>
+      `;
+    }
+
+    function reportDetailRow(row) {
+      const serviceDisplay =
+        row.serviceType === "ERS" ? "ERSA" :
+        row.serviceType === "Vended Repair" ? "Repair" :
+        row.serviceType;
+
+      const detail = {
+        segmentOrCustomer:row.customer,
+        uniqueCustomersOrService:serviceDisplay,
+        combinationsOrStatus:row.dealStatus,
+        forecastedAnnualDemand:row.totalEstimatedDemand,
+        forecastedAnnualRevenue:row.annualEstimatedRevenue,
+        forecastedAnnualMarginDollars:row.annualEstimatedMarginDollars,
+        forecastedMarginPct:row.estimatedMarginPct,
+        annualizedCurrentRevenueRunRate:row.annualizedCurrentRevenueRunRate,
+        annualizedCurrentDemandRate:row.annualizedCurrentDemandRate
       };
 
-      for (const row of rows) {
-        total.totalEstimatedDemand += Number(row.totalEstimatedDemand) || 0;
-        total.annualEstimatedRevenue += Number(row.annualEstimatedRevenue) || 0;
-        total.annualEstimatedMarginDollars += Number(row.annualEstimatedMarginDollars) || 0;
-        total.fixedFeeWeeklyBilling += Number(row.fixedFeeWeeklyBilling) || 0;
-      }
-
-      total.estimatedMarginPct = total.annualEstimatedRevenue
-        ? total.annualEstimatedMarginDollars / total.annualEstimatedRevenue * 100
-        : null;
-
-      return total;
+      return `
+        <tr class="data-row report-detail-row">
+          ${REPORT_COLUMNS.map(column => `
+            <td class="${column.type ? "num" : ""}">
+              ${reportFormatValue(detail[column.key], column.type)}
+            </td>
+          `).join("")}
+        </tr>
+      `;
     }
 
-    function totalRow(label, rows, grand = false) {
-      const total = totals(rows);
+    function reportTotalRow(label, rows, grand = false) {
+      const metrics = segmentMetrics(label, rows, true);
 
-      const cells = COLUMNS.map((column, index) => {
-        if (index === 0) return `<td>${escapeText(label)}</td>`;
+      /*
+        Detail total rows follow the sample format: counts remain blank and
+        financial/demand totals begin in the fourth column.
+      */
+      metrics.uniqueCustomersOrService = "";
+      metrics.combinationsOrStatus = "";
 
-        if ([
-          "totalEstimatedDemand",
-          "annualEstimatedRevenue",
-          "annualEstimatedMarginDollars",
-          "estimatedMarginPct",
-          "fixedFeeWeeklyBilling"
-        ].includes(column.key)) {
-          return `<td class="${column.type ? "num" : ""}">${formatValue(total, column)}</td>`;
-        }
-
-        return "<td></td>";
-      }).join("");
-
-      return `<tr class="${grand ? "grand-total" : "total-row"}">${cells}</tr>`;
+      return `
+        <tr class="${grand ? "grand-total" : "total-row"}">
+          ${REPORT_COLUMNS.map(column => `
+            <td class="${column.type ? "num" : ""}">
+              ${reportFormatValue(metrics[column.key], column.type)}
+            </td>
+          `).join("")}
+        </tr>
+      `;
     }
 
-    function renderSection(label, rows, body) {
+    function renderReportSection(label, rows, body) {
       if (!rows.length) return;
 
-      body.push(`<tr class="section-row"><td colspan="${COLUMNS.length}">${label}</td></tr>`);
-      rows.forEach(row => {
-        body.push(`<tr class="data-row">${COLUMNS.map(column => valueCell(row, column)).join("")}</tr>`);
-      });
-      body.push(totalRow(`Total ${label.startsWith("Incremental") ? "Incremental" : "Current"}`, rows));
+      body.push(`<tr class="section-row"><td colspan="${REPORT_COLUMNS.length}">${label}</td></tr>`);
+      rows.forEach(row => body.push(reportDetailRow(row)));
     }
 
     function renderReport() {
@@ -1813,11 +1912,29 @@
       const current = rows.filter(row => row.group === "Current OSC Customers");
       const body = [];
 
-      renderSection("Incremental OSC Customers", incremental, body);
-      renderSection("Current OSC Customers", current, body);
-      body.push(totalRow("TOTAL OSC", rows, true));
+      body.push(segmentSummaryRow(
+        segmentMetrics("Incremental Pipeline (Signed & In Legal)", incremental, false)
+      ));
+      body.push(segmentSummaryRow(
+        segmentMetrics("Launched Business", current, true)
+      ));
 
-      const header = COLUMNS
+      body.push(`<tr class="report-spacer-row"><td colspan="${REPORT_COLUMNS.length}"></td></tr>`);
+
+      renderReportSection("Incremental Pipeline (Signed & In Legal)", incremental, body);
+      if (incremental.length) {
+        body.push(reportTotalRow("Total Incremental", incremental));
+        body.push(`<tr class="report-spacer-row"><td colspan="${REPORT_COLUMNS.length}"></td></tr>`);
+      }
+
+      renderReportSection("Launched Business", current, body);
+      if (current.length) {
+        body.push(reportTotalRow("Total Current", current));
+      }
+
+      body.push(reportTotalRow("TOTAL OSC", rows, true));
+
+      const header = REPORT_COLUMNS
         .map(column => `<th style="width:${column.width}px">${escapeText(column.label)}</th>`)
         .join("");
 
@@ -1836,7 +1953,9 @@
         minute:"2-digit"
       });
 
-      summaryText.textContent = `${rows.length} rows · refreshed ${refreshed}`;
+      summaryText.textContent =
+        `${new Set(rows.map(row => customerCore(row.customer))).size} customers · ` +
+        `${rows.length} customer / service combinations · refreshed ${refreshed}`;
     }
 
     function populateCustomers() {
