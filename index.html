@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSC Monetization</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <style>
+    :root {
+      --sidebar:#3a3b40;
+      --sidebar-hover:#4a4b50;
+      --gold:#ffc600;
+      --gold-hover:#e5b200;
+      --page:#f4f6f9;
+      --panel:#ffffff;
+      --border:#d8dde3;
+      --text:#2f3338;
+      --muted:#6b7280;
+      --blue:#1f4e78;
+      --blue-dark:#173a59;
+      --section:#e8edf2;
+      --total:#d9e2ec;
+      --green:#16794a;
+      --red:#b42318;
+    }
+
+    * { box-sizing:border-box; }
+    html, body { height:100%; margin:0; }
+
+    body {
+      display:flex;
+      overflow:hidden;
+      background:var(--page);
+      color:var(--text);
+      font-family:"Raleway","Segoe UI",Arial,sans-serif;
+    }
+
+    button, input, select { font:inherit; }
+
+    #login-overlay {
+      position:fixed;
+      inset:0;
+      z-index:10000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:var(--sidebar);
+    }
+
+    .login-box {
+      width:350px;
+      padding:38px;
+      background:#fff;
+      border-radius:8px;
+      box-shadow:0 14px 35px rgba(0,0,0,.35);
+      text-align:center;
+    }
+
+    .login-box h2 {
+      margin:15px 0 20px;
+      font-size:24px;
+      font-weight:900;
+    }
+
+    .login-box input {
+      width:100%;
+      height:44px;
+      padding:0 12px;
+      margin-bottom:12px;
+      border:1px solid #cbd2da;
+      border-radius:5px;
+      font-size:15px;
+    }
+
+    .login-box button {
+      width:100%;
+      height:42px;
+      border:none;
+      border-radius:5px;
+      background:var(--gold);
+      color:#252525;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .login-error {
+      display:none;
+      margin-bottom:10px;
+      color:var(--red);
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .sidebar {
+      width:280px;
+      flex:0 0 280px;
+      display:flex;
+      flex-direction:column;
+      background:var(--sidebar);
+      color:#fff;
+      box-shadow:2px 0 8px rgba(0,0,0,.12);
+    }
+
+    .brand {
+      min-height:100px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      border-bottom:1px solid #292a2e;
+    }
+
+    .brand-copy {
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      justify-content:center;
+      line-height:1;
+    }
+
+    .brand-name {
+      font-size:38px;
+      font-weight:900;
+      letter-spacing:1.2px;
+    }
+
+    .brand-plus { color:var(--gold); }
+
+    .brand-subtitle {
+      margin-top:7px;
+      color:var(--gold);
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:2.2px;
+      text-transform:uppercase;
+    }
+
+    .wheel {
+      width:44px;
+      height:44px;
+      border:7px solid var(--gold);
+      border-radius:50%;
+      position:relative;
+      display:inline-block;
+    }
+
+    .wheel::before, .wheel::after {
+      content:"";
+      position:absolute;
+      left:50%;
+      top:50%;
+      background:var(--gold);
+      transform:translate(-50%,-50%);
+    }
+
+    .wheel::before { width:31px; height:6px; }
+    .wheel::after { width:6px; height:31px; }
+
+    .nav-item {
+      padding:16px 20px;
+      border-bottom:1px solid #4b4c51;
+      border-left:4px solid transparent;
+      color:#fff;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      transition:.15s;
+    }
+
+    .nav-item:hover {
+      background:var(--sidebar-hover);
+      color:var(--gold);
+    }
+
+    .nav-item.active {
+      border-left-color:var(--gold);
+      background:var(--sidebar-hover);
+      color:var(--gold);
+    }
+
+    .sidebar-truck {
+      margin-top:auto;
+      padding:24px 20px 22px;
+      border-top:1px solid #4b4c51;
+      background:#2a2b30;
+      text-align:center;
+    }
+
+    .app {
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+
+    .topbar {
+      min-height:86px;
+      flex:0 0 86px;
+      padding:16px 26px;
+      background:#fff;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:24px;
+      box-shadow:0 2px 5px rgba(0,0,0,.04);
+    }
+
+    .title h1 {
+      margin:0;
+      font-size:27px;
+      font-weight:850;
+    }
+
+    .filter {
+      min-width:300px;
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+    }
+
+    .filter label {
+      color:var(--muted);
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.6px;
+      text-transform:uppercase;
+    }
+
+    .filter select {
+      height:40px;
+      padding:0 12px;
+      border:1px solid #cbd2da;
+      border-radius:5px;
+      background:#fff;
+      color:var(--text);
+      font-size:14px;
+      font-weight:700;
+      outline:none;
+    }
+
+    .view {
+      display:none;
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:22px 26px 32px;
+    }
+
+    .view.active { display:block; }
+
+    .error-box {
+      display:none;
+      margin-bottom:12px;
+      padding:11px 13px;
+      border:1px solid #ef9a9a;
+      border-left:4px solid var(--red);
+      border-radius:6px;
+      background:#fff1f1;
+      color:#7f1d1d;
+      font-size:12px;
+      font-weight:750;
+      line-height:1.45;
+    }
+
+    .report-panel, .config-panel {
+      overflow:hidden;
+      border:1px solid var(--border);
+      border-top:4px solid var(--gold);
+      border-radius:8px;
+      background:var(--panel);
+      box-shadow:0 2px 8px rgba(20,30,45,.07);
+    }
+
+    .panel-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:16px;
+      padding:14px 16px;
+      border-bottom:1px solid var(--border);
+    }
+
+    .panel-head h2 {
+      margin:0;
+      font-size:17px;
+      font-weight:850;
+    }
+
+    .refresh {
+      color:var(--muted);
+      font-size:11px;
+      font-weight:800;
+      text-align:right;
+    }
+
+    .loading {
+      padding:65px 20px;
+      text-align:center;
+      color:var(--muted);
+      font-size:14px;
+      font-weight:800;
+    }
+
+    .spinner {
+      width:34px;
+      height:34px;
+      margin:0 auto 13px;
+      border:4px solid #e2e8f0;
+      border-top-color:var(--gold);
+      border-radius:50%;
+      animation:spin .8s linear infinite;
+    }
+
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    .table-wrap {
+      overflow:auto;
+      max-height:calc(100vh - 190px);
+    }
+
+    table {
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      table-layout:fixed;
+      font-size:12px;
+    }
+
+    .report-table, .config-table { min-width:1450px; }
+
+    thead th {
+      position:sticky;
+      top:0;
+      z-index:4;
+      padding:9px 7px;
+      border-right:1px solid rgba(255,255,255,.22);
+      border-bottom:2px solid var(--blue-dark);
+      background:var(--blue);
+      color:#fff;
+      text-align:center;
+      vertical-align:middle;
+      font-size:9.5px;
+      font-weight:900;
+      line-height:1.2;
+      text-transform:uppercase;
+      white-space:normal;
+    }
+
+    .report-table th:first-child,
+    .report-table td:first-child {
+      position:sticky;
+      left:0;
+      z-index:3;
+    }
+
+    .report-table thead th:first-child { z-index:6; }
+
+    tbody td {
+      padding:8px 7px;
+      border-right:1px solid var(--border);
+      border-bottom:1px solid var(--border);
+      background:#fff;
+      vertical-align:middle;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .report-table tbody td:first-child {
+      background:#fff;
+      text-align:left;
+      font-weight:800;
+    }
+
+    tbody tr.data-row:hover td,
+    tbody tr.data-row:hover td:first-child {
+      background:#fffbea;
+    }
+
+    .section-row td {
+      padding:8px 10px;
+      border-top:2px solid #b9c4cf;
+      border-bottom:2px solid #b9c4cf;
+      background:var(--section)!important;
+      color:#20262d;
+      text-align:left!important;
+      font-size:12px;
+      font-weight:900;
+    }
+
+    .total-row td {
+      border-top:2px solid #9ba8b5;
+      background:var(--total)!important;
+      font-weight:900;
+    }
+
+    .grand-total td,
+    .grand-total td:first-child {
+      border-color:#3b4651;
+      background:#26323f!important;
+      color:#fff;
+      font-weight:900;
+    }
+
+    .num { text-align:right!important; }
+
+    .config-toolbar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      flex-wrap:wrap;
+      padding:14px 16px;
+      border-bottom:1px solid var(--border);
+      background:#f8fafc;
+    }
+
+    .config-actions {
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    .btn {
+      border:none;
+      border-radius:5px;
+      padding:9px 13px;
+      font-size:11px;
+      font-weight:900;
+      cursor:pointer;
+      transition:.15s;
+    }
+
+    .btn:hover { transform:translateY(-1px); }
+    .btn:disabled { cursor:not-allowed; opacity:.45; transform:none; }
+
+    .btn-gold { background:var(--gold); color:#222; }
+    .btn-blue { background:var(--blue); color:#fff; }
+    .btn-dark { background:#334155; color:#fff; }
+    .btn-red { background:#b42318; color:#fff; }
+    .btn-light { background:#e2e8f0; color:#334155; border:1px solid #cbd5e1; }
+
+    .unlock-badge {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      font-size:10px;
+      font-weight:900;
+    }
+
+    .unlock-badge.locked {
+      background:#fee2e2;
+      color:#991b1b;
+      border:1px solid #fecaca;
+    }
+
+    .unlock-badge.unlocked {
+      background:#dcfce7;
+      color:#166534;
+      border:1px solid #86efac;
+    }
+
+    .config-customer-link {
+      border:none;
+      background:transparent;
+      color:#0b5cab;
+      font-weight:900;
+      cursor:pointer;
+      padding:0;
+      text-align:left;
+    }
+
+    .config-customer-link:hover { text-decoration:underline; }
+
+    .service-pill {
+      display:inline-flex;
+      padding:4px 8px;
+      border-radius:999px;
+      background:#e8eef5;
+      border:1px solid #cbd5e1;
+      color:#334155;
+      font-size:10px;
+      font-weight:900;
+    }
+
+    .empty-state {
+      padding:45px 20px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .modal-overlay {
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:12000;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      background:rgba(15,23,42,.72);
+    }
+
+    .modal-overlay.open { display:flex; }
+
+    .modal-box {
+      width:540px;
+      max-width:96vw;
+      max-height:94vh;
+      overflow:auto;
+      border-radius:9px;
+      border-top:5px solid var(--gold);
+      background:#fff;
+      box-shadow:0 18px 45px rgba(0,0,0,.3);
+    }
+
+    .editor-box { width:96vw; }
+
+    .modal-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      padding:15px 18px;
+      border-bottom:1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      margin:0;
+      font-size:18px;
+      font-weight:900;
+    }
+
+    .modal-close {
+      border:none;
+      background:transparent;
+      color:#64748b;
+      font-size:24px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .modal-body { padding:18px; }
+
+    .modal-footer {
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      padding:13px 18px;
+      border-top:1px solid var(--border);
+      background:#f8fafc;
+    }
+
+    .field {
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+    }
+
+    .field label {
+      color:#64748b;
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+    }
+
+    .field input, .field select {
+      height:39px;
+      padding:0 10px;
+      border:1px solid #cbd5e1;
+      border-radius:5px;
+      background:#fff;
+      color:#1f2937;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .annualization-controls {
+      display:flex;
+      align-items:end;
+      gap:18px;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+      padding:12px;
+      border:1px solid #dce2e8;
+      border-radius:6px;
+      background:#f8fafc;
+    }
+
+    .existing-check {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-height:39px;
+      color:#334155;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .existing-check input {
+      width:17px;
+      height:17px;
+      accent-color:var(--gold-hover);
+    }
+
+    .service-editor-wrap {
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:7px;
+    }
+
+    .service-editor {
+      width:100%;
+      min-width:1450px;
+      border-collapse:collapse;
+    }
+
+    .service-editor th {
+      position:static;
+      background:#111827;
+      border:1px solid #374151;
+      font-size:9px;
+    }
+
+    .service-editor td {
+      border:1px solid var(--border);
+      padding:6px;
+      overflow:visible;
+    }
+
+    .service-editor input[type="number"],
+    .service-editor input[type="text"],
+    .service-editor select {
+      width:100%;
+      min-width:88px;
+      height:34px;
+      padding:0 7px;
+      border:1px solid #cbd5e1;
+      border-radius:4px;
+      font-size:11px;
+    }
+
+    .service-editor input[type="number"] { text-align:right; }
+
+    .service-editor input[type="checkbox"] {
+      width:17px;
+      height:17px;
+      accent-color:var(--gold-hover);
+    }
+
+    .service-name {
+      min-width:150px;
+      text-align:left!important;
+      font-weight:900;
+    }
+
+    .service-row.disabled td {
+      background:#f1f5f9;
+      color:#94a3b8;
+    }
+
+    .service-row.disabled input:not([type="checkbox"]) {
+      background:#e2e8f0;
+      color:#94a3b8;
+    }
+
+    .form-error {
+      display:none;
+      margin-top:12px;
+      padding:9px 11px;
+      border:1px solid #fecaca;
+      border-radius:5px;
+      background:#fee2e2;
+      color:#991b1b;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .password-note {
+      margin-bottom:12px;
+      color:#64748b;
+      font-size:12px;
+      font-weight:700;
+      line-height:1.45;
+    }
+
+    @media (max-width:900px) {
+      .sidebar { width:210px; flex-basis:210px; }
+      .brand-name { font-size:30px; }
+      .topbar {
+        height:auto;
+        flex-basis:auto;
+        align-items:flex-start;
+        flex-direction:column;
+      }
+      .filter { width:100%; min-width:0; }
+      .view { padding:16px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="login-overlay">
+    <div class="login-box">
+      <span class="wheel"></span>
+      <h2>OSC+ Login</h2>
+      <div id="login-error" class="login-error">Incorrect password</div>
+      <input id="login-pass" type="password" placeholder="Enter Password"
+             onkeypress="if(event.key === 'Enter') checkLogin()">
+      <button onclick="checkLogin()">ENTER</button>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="wheel" aria-hidden="true"></span>
+      <div class="brand-copy">
+        <span class="brand-name">OSC<span class="brand-plus">+</span></span>
+        <span class="brand-subtitle">Monetization</span>
+      </div>
+    </div>
+
+    <div id="nav-report" class="nav-item active" onclick="showView('report')">OSC Monetization</div>
+    <div id="nav-config" class="nav-item" onclick="showView('config')">Customer Configuration</div>
+
+    <div class="sidebar-truck">
+      <svg width="150" height="76" viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="57" x2="120" y2="57" stroke="#4a4b50" stroke-width="2" stroke-dasharray="10 5"/>
+        <rect x="5" y="15" width="70" height="35" fill="var(--gold)" rx="3"/>
+        <path d="M78 25 H 92 L 105 35 V 50 H 78 Z" fill="var(--gold)"/>
+        <path d="M82 28 H 90 L 98 35 H 82 Z" fill="#2a2b30"/>
+        <rect x="75" y="42" width="3" height="4" fill="#888"/>
+        <line x1="15" y1="25" x2="65" y2="25" stroke="#c49a1d" stroke-width="1.5"/>
+        <circle cx="25" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="25" cy="50" r="2" fill="#888"/>
+        <circle cx="60" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="60" cy="50" r="2" fill="#888"/>
+        <circle cx="91" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="91" cy="50" r="2" fill="#888"/>
+      </svg>
+    </div>
+  </aside>
+
+  <main class="app">
+    <header class="topbar">
+      <div class="title">
+        <h1 id="pageTitle">OSC Monetization</h1>
+      </div>
+
+      <div id="filterWrap" class="filter">
+        <label for="customerFilter">Customer</label>
+        <select id="customerFilter" disabled>
+          <option>Loading customers...</option>
+        </select>
+      </div>
+    </header>
+
+    <section id="report-view" class="view active">
+      <div id="errorBox" class="error-box"></div>
+
+      <div class="report-panel">
+        <div class="panel-head">
+          <h2>OSC Monetization Report</h2>
+          <span id="summaryText" class="refresh">Connecting to Firebase...</span>
+        </div>
+
+        <div id="reportArea" class="loading">
+          <div class="spinner"></div>
+          Loading report
+        </div>
+      </div>
+    </section>
+
+    <section id="config-view" class="view">
+      <div class="config-panel">
+        <div class="panel-head">
+          <h2>Customer Configuration</h2>
+          <span id="configSummary" class="refresh">Loading configuration...</span>
+        </div>
+
+        <div class="config-toolbar">
+          <div>
+            <span id="editStatus" class="unlock-badge locked">Editing Locked</span>
+          </div>
+          <div class="config-actions">
+            <button id="unlockButton" class="btn btn-dark" onclick="openUnlockModal()">Unlock Editing</button>
+            <button id="addCustomerButton" class="btn btn-gold" onclick="openCustomerEditor()" disabled>Add Customer</button>
+          </div>
+        </div>
+
+        <div id="configTableArea" class="loading">
+          <div class="spinner"></div>
+          Loading customer configuration
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="unlockModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Unlock Customer Editing</h3>
+        <button class="modal-close" onclick="closeModal('unlockModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="password-note">
+          Enter the customer-configuration password. The unlocked state lasts for this browser tab.
+        </div>
+        <div class="field">
+          <label for="editPassword">Edit Password</label>
+          <input id="editPassword" type="password" autocomplete="off"
+                 onkeypress="if(event.key === 'Enter') unlockEditing()">
+        </div>
+        <div id="unlockError" class="form-error">Incorrect edit password.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-light" onclick="closeModal('unlockModal')">Cancel</button>
+        <button class="btn btn-gold" onclick="unlockEditing()">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="customerEditorModal" class="modal-overlay">
+    <div class="modal-box editor-box">
+      <div class="modal-header">
+        <h3 id="editorTitle">Add Customer</h3>
+        <button class="modal-close" onclick="closeModal('customerEditorModal')">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input id="manualRecordId" type="hidden">
+
+        <div class="annualization-controls">
+          <label class="existing-check">
+            <input id="manualExistingCustomer" type="checkbox" onchange="toggleLaunchDate()">
+            Existing Customer — launched before this year
+          </label>
+
+          <div class="field" style="min-width:230px">
+            <label for="manualLaunchDate">Launch Date</label>
+            <input id="manualLaunchDate" type="date">
+          </div>
+        </div>
+
+        <div class="service-editor-wrap">
+          <table class="service-editor">
+            <thead>
+              <tr>
+                <th style="width:190px">Customer</th>
+                <th style="width:165px">Service Type</th>
+                <th style="width:110px">Status</th>
+                <th style="width:130px">Total Estimated Demand</th>
+                <th style="width:145px">Annual Estimated Revenue</th>
+                <th style="width:145px">Annual Estimated Margin $</th>
+                <th style="width:110px">Estimated Margin %</th>
+                <th style="width:135px">Fixed Fee Weekly Billing</th>
+                <th style="width:130px">Handling Fee ($ / Call)</th>
+                <th style="width:90px">Markup</th>
+              </tr>
+            </thead>
+            <tbody id="serviceEditorBody"></tbody>
+          </table>
+        </div>
+
+        <div id="editorError" class="form-error"></div>
+      </div>
+
+      <div class="modal-footer" style="justify-content:space-between">
+        <button id="deleteCustomerButton" class="btn btn-red" onclick="deleteCurrentEditorCustomer()" style="display:none">Delete Customer</button>
+        <div style="display:flex; gap:8px; margin-left:auto">
+          <button class="btn btn-light" onclick="closeModal('customerEditorModal')">Cancel</button>
+          <button id="saveCustomerButton" class="btn btn-gold" onclick="saveManualCustomer()">Save Customer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MASTER_EMAIL = "maintenance@ameritfleet.com";
+    const SALESFORCE_FILE = "Fleet Solutions Deals.xlsx";
+    const VRO_FILE = "VRO Export.xlsx";
+    const MANUAL_CUSTOMERS_PATH = "oscMonetization/manualCustomers";
+    const AUTO_REFRESH_MS = 15 * 60 * 1000;
+    const EDIT_PASSWORD_HASH = "acaf7bb295b74f4d3febaaf6b84a2e6f951ac9ee27ec7da2361d41eb9548e750";
+
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyCr3VAldI-pPCb7APx3rJAEZvf_nl0iz1g",
+      authDomain: "workflow-dashboard-e6134.firebaseapp.com",
+      databaseURL: "https://workflow-dashboard-e6134-default-rtdb.firebaseio.com",
+      projectId: "workflow-dashboard-e6134",
+      storageBucket: "workflow-dashboard-e6134.firebasestorage.app",
+      messagingSenderId: "641710248116",
+      appId: "1:641710248116:web:1546701879d573041447e1"
+    };
+
+    const SERVICE_TYPES = ["ERS", "PM", "Vended Repair"];
+
+    const REPCLASS_SERVICE_MAP = {
+      "GARDA ERSA":"ERS",
+      "OSC RD":"ERS",
+      "BRINKS TOW":"ERS",
+      "BRINKS ERSA":"ERS",
+      "FRONTIER ERS":"ERS",
+      "EMERGENCY":"ERS",
+      "BRINKS ROSID":"ERS",
+      "FERGUSON ERS":"ERS",
+      "ROAD CALL":"ERS",
+      "FDOT TOWING":"ERS",
+      "US FOOD ERSA":"ERS",
+      "AFS PM":"PM",
+      "OSC HO":"PM",
+      "OSC PM":"PM",
+      "STATE INS":"PM",
+      "OSC SI":"PM",
+      "AFS REPAIR":"Vended Repair",
+      "SCHEDULED":"Vended Repair",
+      "SPECIAL PROJ":"Vended Repair",
+      "NONSCHEDULED":"Vended Repair",
+      "DEF MAINT":"Vended Repair",
+      "OOS":"Vended Repair",
+      "ACCIDENT DAM":"Vended Repair",
+      "DRIVER ABUSE":"Vended Repair",
+      "MERCHANT PM":"Vended Repair",
+      "CUST DIRECT":"Vended Repair",
+      "OSC SP":"Vended Repair",
+      "GARDA LTS":"Vended Repair",
+      "TOWING":"Vended Repair"
+    };
+
+    const SALESFORCE_ALIASES = {
+      "gardaworld cash":"Garda",
+      "gardaworld security":"Garda",
+      "brinks - 2026 expansion":"Brinks",
+      "purple wave auction headquarters":"Purple Wave",
+      "premier truck rental- roadside":"Premier Truck Rental",
+      "u.s. foods inc.":"US Foods",
+      "us foods - ketchikan, ak":"US Foods",
+      "us foods - sitka, ak":"US Foods",
+      "us foods - juneau, ak":"US Foods",
+      "colony hardware":"Colony Hardware",
+      "sysco southeast":"Sysco",
+      "sukut construction":"Sukut Construction",
+      "c&l transport, inc.":"C&L Transport",
+      "3615944 canada inc (dba conrep)":"CONREP",
+      "distribution frankarl inc.":"Distribution Frankarl",
+      "marc bon lait":"Marc Bon Lait",
+      "crownsource":"CrownSource"
+    };
+
+    const ELIGIBLE_STAGE_TERMS = [
+      "in legal",
+      "legal",
+      "closed won",
+      "closed-won",
+      "signed",
+      "live"
+    ];
+
+    const CURRENT_STAGE_TERMS = [
+      "closed won",
+      "closed-won",
+      "signed",
+      "live"
+    ];
+
+    const COLUMNS = [
+      { key:"customer", label:"Customer", width:190 },
+      { key:"serviceType", label:"Service Type", width:145 },
+      { key:"dealStatus", label:"Status", width:105 },
+      { key:"totalEstimatedDemand", label:"Total Estimated Demand", width:130, type:"integer" },
+      { key:"annualEstimatedRevenue", label:"Annual Estimated Revenue", width:145, type:"money" },
+      { key:"annualEstimatedMarginDollars", label:"Annual Estimated Margin $", width:145, type:"money" },
+      { key:"estimatedMarginPct", label:"Estimated Margin %", width:110, type:"percent" },
+      { key:"fixedFeeWeeklyBilling", label:"Fixed Fee Weekly Billing", width:135, type:"money" },
+      { key:"handlingFeePerCall", label:"Handling Fee ($ / Call)", width:130, type:"money" },
+      { key:"markup", label:"Markup", width:90, type:"percent" }
+    ];
+
+    let REPORT_ROWS = [];
+    let SALESFORCE_CUSTOMERS = new Map();
+    let VRO_DATA = { latestDate:new Date(), customers:[] };
+    let MANUAL_CUSTOMERS = {};
+    let EDIT_UNLOCKED = sessionStorage.getItem("oscMonetizationEditUnlocked") === "1";
+    let DATABASE_LISTENER_STARTED = false;
+    const MATCH_CACHE = new Map();
+
+    const customerFilter = document.getElementById("customerFilter");
+    const reportArea = document.getElementById("reportArea");
+    const summaryText = document.getElementById("summaryText");
+    const errorBox = document.getElementById("errorBox");
+
+    function normalize(value) {
+      return String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+    }
+
+    function normalizeHeader(value) {
+      return normalize(value).replace(/[^a-z0-9]/g, "");
+    }
+
+    function safeNumber(value) {
+      if (value === null || value === undefined || value === "") return null;
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+
+      const cleaned = String(value)
+        .replace(/\$/g, "")
+        .replace(/,/g, "")
+        .replace(/\((.*?)\)/, "-$1")
+        .replace(/%/g, "")
+        .trim();
+
+      const number = Number(cleaned);
+      return Number.isFinite(number) ? number : null;
+    }
+
+    function numberOrZero(value) {
+      return safeNumber(value) ?? 0;
+    }
+
+    function excelDate(value) {
+      if (!value) return null;
+      if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+
+      if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (!parsed) return null;
+        return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+      }
+
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function dateKey(date) {
+      if (!date || Number.isNaN(date.getTime())) return "";
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function money(value, decimals = 0) {
+      if (value === null || value === undefined || value === "") return "";
+      return Number(value).toLocaleString("en-US", {
+        style:"currency",
+        currency:"USD",
+        minimumFractionDigits:decimals,
+        maximumFractionDigits:decimals
+      });
+    }
+
+    function integer(value) {
+      if (value === null || value === undefined || value === "") return "";
+      return Math.round(Number(value)).toLocaleString("en-US");
+    }
+
+    function percent(value) {
+      if (value === null || value === undefined || value === "") return "";
+      return `${Number(value).toLocaleString("en-US", { maximumFractionDigits:1 })}%`;
+    }
+
+    function escapeText(value) {
+      return String(value ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+
+    function findHeader(headers, aliases, fallbackIndex = -1) {
+      const map = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
+
+      for (const alias of aliases) {
+        const match = map.get(normalizeHeader(alias));
+        if (match !== undefined) return match;
+      }
+
+      return fallbackIndex >= 0 && fallbackIndex < headers.length ? fallbackIndex : -1;
+    }
+
+    function findHeaderRowIndex(rows, requiredHeaders) {
+      const required = requiredHeaders.map(normalizeHeader);
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const present = new Set(
+          rows[rowIndex].map(value => normalizeHeader(value)).filter(Boolean)
+        );
+
+        if (required.every(header => present.has(header))) return rowIndex;
+      }
+
+      return -1;
+    }
+
+    function valueAt(row, index) {
+      return index >= 0 && index < row.length ? row[index] : "";
+    }
+
+    function canonicalSalesforceCustomer(value) {
+      const raw = String(value ?? "").trim();
+      return SALESFORCE_ALIASES[normalize(raw)] || raw;
+    }
+
+    function isEligibleStage(value) {
+      const stage = normalize(value);
+      return ELIGIBLE_STAGE_TERMS.some(term => stage.includes(term));
+    }
+
+    function isCurrentStage(value) {
+      const stage = normalize(value);
+      return CURRENT_STAGE_TERMS.some(term => stage.includes(term));
+    }
+
+    function standardServiceTypes(value) {
+      const text = normalize(value);
+      const services = [];
+
+      if (
+        /\bersa?\b/.test(text) ||
+        text.includes("roadside") ||
+        text.includes("emergency road")
+      ) {
+        services.push("ERS");
+      }
+
+      if (
+        text.includes("preventative") ||
+        text.includes("preventive") ||
+        text.includes("maintenance") ||
+        /\bpm\b/.test(text)
+      ) {
+        services.push("PM");
+      }
+
+      if (text.includes("repair")) services.push("Vended Repair");
+
+      return [...new Set(services)];
+    }
+
+    function displayServices(services) {
+      const values = [...services];
+      if (!values.length) return "";
+      return values.length === 1 ? values[0] : "Multiple";
+    }
+
+    function displayStatuses(statuses) {
+      const values = [...statuses].filter(Boolean);
+      if (!values.length) return "";
+      return values.length === 1 ? values[0] : "Multiple";
+    }
+
+    function average(values) {
+      if (!values.length) return null;
+      return values.reduce((sum, value) => sum + value, 0) / values.length;
+    }
+
+    function customerCore(value) {
+      const stop = new Set([
+        "inc","incorporated","llc","ltd","limited","corp","corporation",
+        "company","co","holdings","holding","headquarters","hq","the",
+        "usa","us","nationwide","expansion"
+      ]);
+
+      return normalize(value)
+        .replace(/&/g, " and ")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(token => token && !stop.has(token) && !/^\d{4}$/.test(token))
+        .join(" ");
+    }
+
+    function customerTokens(value) {
+      return new Set(customerCore(value).split(/\s+/).filter(Boolean));
+    }
+
+    function levenshtein(a, b) {
+      if (a === b) return 0;
+      if (!a.length) return b.length;
+      if (!b.length) return a.length;
+
+      const previous = Array.from({length:b.length + 1}, (_, index) => index);
+
+      for (let i = 1; i <= a.length; i++) {
+        let diagonal = previous[0];
+        previous[0] = i;
+
+        for (let j = 1; j <= b.length; j++) {
+          const old = previous[j];
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+
+          previous[j] = Math.min(
+            previous[j] + 1,
+            previous[j - 1] + 1,
+            diagonal + cost
+          );
+
+          diagonal = old;
+        }
+      }
+
+      return previous[b.length];
+    }
+
+    function customerMatchScore(target, candidate) {
+      const a = customerCore(target);
+      const b = customerCore(candidate);
+
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+
+      if ((a.includes(b) || b.includes(a)) && Math.min(a.length, b.length) >= 4) {
+        return .94;
+      }
+
+      const tokensA = customerTokens(a);
+      const tokensB = customerTokens(b);
+      const intersection = [...tokensA].filter(token => tokensB.has(token)).length;
+      const union = new Set([...tokensA, ...tokensB]).size;
+      const jaccard = union ? intersection / union : 0;
+
+      const editSimilarity = 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+      const firstTokenBonus =
+        [...tokensA][0] && [...tokensA][0] === [...tokensB][0] ? .08 : 0;
+
+      return Math.min(1, jaccard * .62 + editSimilarity * .38 + firstTokenBonus);
+    }
+
+    function findMatchedVroCustomer(customerName) {
+      const cacheKey = customerCore(customerName);
+      if (MATCH_CACHE.has(cacheKey)) return MATCH_CACHE.get(cacheKey);
+
+      let best = null;
+      let bestScore = 0;
+
+      for (const candidate of VRO_DATA.customers) {
+        const score = customerMatchScore(customerName, candidate.name);
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
+
+      const result = bestScore >= .72 ? best : null;
+      MATCH_CACHE.set(cacheKey, result);
+      return result;
+    }
+
+    function resolveAnnualizationStart(record, matchedCustomer) {
+      const latest = VRO_DATA.latestDate || new Date();
+      const yearStart = new Date(latest.getFullYear(), 0, 1);
+
+      if (record?.existingCustomer) return yearStart;
+
+      const launchDate = record?.launchDate
+        ? new Date(`${record.launchDate}T00:00:00`)
+        : null;
+
+      if (launchDate && !Number.isNaN(launchDate.getTime())) {
+        return launchDate > yearStart ? launchDate : yearStart;
+      }
+
+      const firstVro = matchedCustomer?.vros
+        ?.map(vro => vro.opened)
+        .filter(Boolean)
+        .sort((a,b) => a - b)[0];
+
+      if (firstVro) return firstVro > yearStart ? firstVro : yearStart;
+
+      return yearStart;
+    }
+
+    function getActuals(customerName, services, record = null) {
+      const matched = findMatchedVroCustomer(customerName);
+
+      if (!matched) {
+        return {
+          matched:false,
+          demand:0,
+          baseSpend:0,
+          annualizedDemand:0,
+          annualizedBaseSpend:0
+        };
+      }
+
+      const serviceSet = new Set(services?.length ? services : SERVICE_TYPES);
+      const start = resolveAnnualizationStart(record, matched);
+      const latest = VRO_DATA.latestDate;
+      const vros = matched.vros.filter(vro =>
+        serviceSet.has(vro.service) &&
+        vro.opened &&
+        vro.opened >= start &&
+        vro.opened <= latest
+      );
+
+      const demand = vros.length;
+      const baseSpend = vros.reduce((sum, vro) => sum + vro.baseAmount, 0);
+      const days = Math.max(
+        1,
+        Math.floor((latest.getTime() - start.getTime()) / 86400000) + 1
+      );
+      const factor = 365 / days;
+
+      return {
+        matched:true,
+        matchedName:matched.name,
+        demand,
+        baseSpend,
+        annualizedDemand:demand * factor,
+        annualizedBaseSpend:baseSpend * factor,
+        startDate:start
+      };
+    }
+
+    async function sha256(value) {
+      const bytes = new TextEncoder().encode(value);
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return [...new Uint8Array(digest)]
+        .map(byte => byte.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    async function fetchWorkbookBuffer(fileName) {
+      const configuredBucket = firebase.app().options.storageBucket;
+      const buckets = [...new Set([
+        configuredBucket,
+        "workflow-dashboard-e6134.firebasestorage.app",
+        "workflow-dashboard-e6134.appspot.com"
+      ].filter(Boolean))];
+
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        for (const bucket of buckets) {
+          try {
+            const ref = bucket === configuredBucket
+              ? firebase.storage().ref().child(fileName)
+              : firebase.storage().refFromURL(`gs://${bucket}/${fileName}`);
+
+            const url = await ref.getDownloadURL();
+            const response = await fetch(
+              `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`,
+              { cache:"no-store" }
+            );
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const buffer = await response.arrayBuffer();
+            const signature = new Uint8Array(buffer.slice(0,2));
+
+            if (signature[0] !== 0x50 || signature[1] !== 0x4b) {
+              throw new Error("Downloaded file is not a valid XLSX workbook.");
+            }
+
+            return buffer;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 750));
+      }
+
+      throw new Error(`${fileName} could not be loaded. ${lastError?.message || ""}`);
+    }
+
+    function rowsFromBuffer(buffer) {
+      const workbook = XLSX.read(buffer, {
+        type:"array",
+        cellDates:true,
+        raw:true
+      });
+
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) throw new Error("Workbook does not contain a worksheet.");
+
+      return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+        header:1,
+        raw:true,
+        defval:""
+      });
+    }
+
+    function parseSalesforce(rows) {
+      const headerIndex = findHeaderRowIndex(rows, [
+        "Account Name",
+        "Amerit Solution",
+        "Stage"
+      ]);
+
+      if (headerIndex < 0) {
+        throw new Error(`${SALESFORCE_FILE} is missing required Salesforce headers.`);
+      }
+
+      const headers = rows[headerIndex].map(value => String(value ?? "").trim());
+      const index = {
+        account:findHeader(headers, ["Account Name"]),
+        amount:findHeader(headers, ["Amount", "Annual Estimated Revenue"]),
+        solution:findHeader(headers, ["Amerit Solution"]),
+        service:findHeader(headers, ["Fleet Solutions Services", "Service Type"]),
+        stage:findHeader(headers, ["Stage", "Opportunity Stage"]),
+        demand:findHeader(headers, ["Total Estimated Demand"]),
+        marginDollars:findHeader(headers, ["Annual Estimated Margin $"]),
+        fixedWeekly:findHeader(headers, ["Fixed Fee Weekly Billing"]),
+        handlingFee:findHeader(headers, ["Handling Fee ($ / Call)", "Handling Fee"]),
+        markup:findHeader(headers, ["Markup"])
+      };
+
+      const customers = new Map();
+
+      for (const row of rows.slice(headerIndex + 1)) {
+        if (normalize(valueAt(row, index.solution)) !== "fleet solutions") continue;
+
+        const status = String(valueAt(row, index.stage) ?? "").trim();
+        if (!isEligibleStage(status)) continue;
+
+        const customer = canonicalSalesforceCustomer(valueAt(row, index.account));
+        if (!customer || normalize(customer) === "subtotal") continue;
+
+        const services = standardServiceTypes(valueAt(row, index.service));
+        if (!services.length) continue;
+
+        const key = customerCore(customer);
+
+        if (!customers.has(key)) {
+          customers.set(key, {
+            customer,
+            services:new Set(),
+            statuses:new Set(),
+            totalEstimatedDemand:0,
+            annualEstimatedRevenue:0,
+            annualEstimatedMarginDollars:0,
+            fixedFeeWeeklyBilling:0,
+            handlingFees:[],
+            markups:[]
+          });
+        }
+
+        const item = customers.get(key);
+        services.forEach(service => item.services.add(service));
+        item.statuses.add(status);
+        item.totalEstimatedDemand += numberOrZero(valueAt(row, index.demand));
+        item.annualEstimatedRevenue += numberOrZero(valueAt(row, index.amount));
+        item.annualEstimatedMarginDollars += numberOrZero(valueAt(row, index.marginDollars));
+        item.fixedFeeWeeklyBilling += numberOrZero(valueAt(row, index.fixedWeekly));
+
+        const handling = safeNumber(valueAt(row, index.handlingFee));
+        const markup = safeNumber(valueAt(row, index.markup));
+
+        if (handling !== null) item.handlingFees.push(handling);
+        if (markup !== null) item.markups.push(markup);
+      }
+
+      return customers;
+    }
+
+    function parseVro(rows) {
+      const headerIndex = findHeaderRowIndex(rows, ["CUSTOMER", "RONUM"]);
+      const actualHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
+      const headers = rows[actualHeaderIndex].map(value => String(value ?? "").trim());
+
+      const index = {
+        customer:findHeader(headers, ["CUSTOMER", "Customer"], 0),
+        repclass:findHeader(headers, ["REPCLASS", "Repair Class"], 4),
+        roNumber:findHeader(headers, ["RONUM", "VRO Number", "RO Number"], 7),
+        opened:findHeader(headers, ["OPENED_PST", "Opened Date", "Open Date"], 8),
+        estimate:findHeader(headers, ["TotalEstimate", "Estimate Total", "Estimated Amount"], 18),
+        invoiced:findHeader(headers, ["ReceivedTotal", "Received Total", "Invoiced Amount", "Invoice Total"], 19)
+      };
+
+      const uniqueVros = new Map();
+      let latestDate = null;
+
+      for (const row of rows.slice(actualHeaderIndex + 1)) {
+        const roNumber = String(valueAt(row, index.roNumber) ?? "").trim();
+        if (!roNumber) continue;
+
+        const repclass = String(valueAt(row, index.repclass) ?? "").trim().toUpperCase();
+        const service = REPCLASS_SERVICE_MAP[repclass];
+        if (!service) continue;
+
+        const customer = String(valueAt(row, index.customer) ?? "").trim();
+        const opened = excelDate(valueAt(row, index.opened));
+
+        if (!customer || !opened) continue;
+
+        if (!uniqueVros.has(roNumber)) {
+          uniqueVros.set(roNumber, {
+            customer,
+            service,
+            opened,
+            estimate:0,
+            invoiced:0
+          });
+        }
+
+        const vro = uniqueVros.get(roNumber);
+        if (opened < vro.opened) vro.opened = opened;
+        vro.estimate += numberOrZero(valueAt(row, index.estimate));
+        vro.invoiced += numberOrZero(valueAt(row, index.invoiced));
+
+        if (!latestDate || opened > latestDate) latestDate = opened;
+      }
+
+      const byCustomer = new Map();
+
+      for (const vro of uniqueVros.values()) {
+        const customerKey = customerCore(vro.customer);
+
+        if (!byCustomer.has(customerKey)) {
+          byCustomer.set(customerKey, {
+            name:vro.customer,
+            vros:[]
+          });
+        }
+
+        byCustomer.get(customerKey).vros.push({
+          service:vro.service,
+          opened:vro.opened,
+          baseAmount:vro.invoiced > 0 ? vro.invoiced : vro.estimate
+        });
+      }
+
+      return {
+        latestDate:latestDate || new Date(),
+        customers:[...byCustomer.values()]
+      };
+    }
+
+    function findManualRecord(customerName) {
+      const target = customerCore(customerName);
+
+      for (const [recordId, record] of Object.entries(MANUAL_CUSTOMERS || {})) {
+        if (customerCore(record.customer) === target) {
+          return { recordId, record };
+        }
+      }
+
+      return null;
+    }
+
+    function legacyServiceSettings(record, service) {
+      if (service === "PM") {
+        return record.services?.PM || record.services?.["Vended Maintenance"] || null;
+      }
+
+      return record.services?.[service] || null;
+    }
+
+    function calculateCurrentRow(customer, service, status, settings, record) {
+      const actual = getActuals(customer, [service], record);
+      const markupPct = numberOrZero(settings?.markup);
+      const handlingFee = numberOrZero(settings?.handlingFeePerCall);
+      const fixedWeekly = numberOrZero(settings?.fixedFeeWeeklyBilling);
+
+      const markupMargin = actual.annualizedBaseSpend * markupPct / 100;
+      const handlingRevenue = actual.annualizedDemand * handlingFee;
+      const fixedFeeRevenue = fixedWeekly * 52;
+
+      const annualRevenue =
+        actual.annualizedBaseSpend +
+        markupMargin +
+        handlingRevenue +
+        fixedFeeRevenue;
+
+      const annualMargin =
+        markupMargin +
+        handlingRevenue +
+        fixedFeeRevenue;
+
+      return {
+        customer,
+        group:"Current OSC Customers",
+        serviceType:service,
+        dealStatus:status,
+        totalEstimatedDemand:actual.annualizedDemand,
+        annualEstimatedRevenue:annualRevenue,
+        annualEstimatedMarginDollars:annualMargin,
+        estimatedMarginPct:annualRevenue ? annualMargin / annualRevenue * 100 : null,
+        fixedFeeWeeklyBilling:fixedWeekly || null,
+        handlingFeePerCall:handlingFee || null,
+        markup:markupPct || null,
+        source:"current",
+        hasActuals:actual.demand > 0
+      };
+    }
+
+    function buildBaseRows() {
+      const rows = [];
+
+      for (const item of SALESFORCE_CUSTOMERS.values()) {
+        if (findManualRecord(item.customer)) continue;
+
+        const services = [...item.services];
+        const serviceDisplay = displayServices(item.services);
+        const status = displayStatuses(item.statuses);
+        const actual = getActuals(item.customer, services);
+        const current = actual.demand > 0 || [...item.statuses].some(isCurrentStage);
+
+        if (current) {
+          const markupPct = average(item.markups) || 0;
+          const handlingFee = average(item.handlingFees) || 0;
+          const fixedWeekly = item.fixedFeeWeeklyBilling || 0;
+          const markupMargin = actual.annualizedBaseSpend * markupPct / 100;
+          const handlingRevenue = actual.annualizedDemand * handlingFee;
+          const fixedRevenue = fixedWeekly * 52;
+          const revenue =
+            actual.annualizedBaseSpend + markupMargin + handlingRevenue + fixedRevenue;
+          const margin = markupMargin + handlingRevenue + fixedRevenue;
+
+          rows.push({
+            customer:item.customer,
+            group:"Current OSC Customers",
+            serviceType:serviceDisplay,
+            serviceTypes:services,
+            dealStatus:status,
+            totalEstimatedDemand:actual.annualizedDemand,
+            annualEstimatedRevenue:revenue,
+            annualEstimatedMarginDollars:margin,
+            estimatedMarginPct:revenue ? margin / revenue * 100 : null,
+            fixedFeeWeeklyBilling:fixedWeekly || null,
+            handlingFeePerCall:handlingFee || null,
+            markup:markupPct || null,
+            source:"salesforce"
+          });
+        } else {
+          const margin =
+            item.annualEstimatedMarginDollars ||
+            (item.annualEstimatedRevenue
+              ? item.annualEstimatedRevenue * (average(item.markups) || 0) / 100
+              : 0);
+
+          rows.push({
+            customer:item.customer,
+            group:"Incremental OSC Customers",
+            serviceType:serviceDisplay,
+            serviceTypes:services,
+            dealStatus:status,
+            totalEstimatedDemand:item.totalEstimatedDemand || null,
+            annualEstimatedRevenue:item.annualEstimatedRevenue || null,
+            annualEstimatedMarginDollars:margin || null,
+            estimatedMarginPct:item.annualEstimatedRevenue && margin
+              ? margin / item.annualEstimatedRevenue * 100
+              : null,
+            fixedFeeWeeklyBilling:item.fixedFeeWeeklyBilling || null,
+            handlingFeePerCall:average(item.handlingFees),
+            markup:average(item.markups),
+            source:"salesforce"
+          });
+        }
+      }
+
+      return rows;
+    }
+
+    function buildConfiguredRows() {
+      const rows = [];
+
+      for (const [recordId, record] of Object.entries(MANUAL_CUSTOMERS || {})) {
+        const customer = String(record.customer || "").trim();
+        if (!customer) continue;
+
+        for (const service of SERVICE_TYPES) {
+          const settings = legacyServiceSettings(record, service);
+          if (!settings?.enabled) continue;
+
+          const actual = getActuals(customer, [service], record);
+          const status = record.status || "In Legal";
+          const current = actual.demand > 0 || isCurrentStage(status);
+
+          if (current) {
+            const row = calculateCurrentRow(customer, service, status, settings, record);
+            row.manualRecordId = recordId;
+            row.source = "configured";
+            rows.push(row);
+          } else {
+            const annualRevenue = safeNumber(settings.annualEstimatedRevenue);
+            const annualMargin = safeNumber(settings.annualEstimatedMarginDollars);
+
+            rows.push({
+              customer,
+              group:"Incremental OSC Customers",
+              serviceType:service,
+              dealStatus:status,
+              totalEstimatedDemand:safeNumber(settings.totalEstimatedDemand),
+              annualEstimatedRevenue:annualRevenue,
+              annualEstimatedMarginDollars:annualMargin,
+              estimatedMarginPct:annualRevenue && annualMargin !== null
+                ? annualMargin / annualRevenue * 100
+                : null,
+              fixedFeeWeeklyBilling:safeNumber(settings.fixedFeeWeeklyBilling),
+              handlingFeePerCall:safeNumber(settings.handlingFeePerCall),
+              markup:safeNumber(settings.markup),
+              manualRecordId:recordId,
+              source:"configured"
+            });
+          }
+        }
+      }
+
+      return rows;
+    }
+
+    function rebuildReportRows() {
+      MATCH_CACHE.clear();
+      REPORT_ROWS = [...buildBaseRows(), ...buildConfiguredRows()]
+        .sort((a,b) =>
+          a.group.localeCompare(b.group) ||
+          a.customer.localeCompare(b.customer) ||
+          a.serviceType.localeCompare(b.serviceType)
+        );
+
+      populateCustomers();
+      renderReport();
+      renderConfigTable();
+    }
+
+    function filteredRows() {
+      const selected = customerFilter.value;
+      return selected === "ALL"
+        ? REPORT_ROWS
+        : REPORT_ROWS.filter(row => row.customer === selected);
+    }
+
+    function formatValue(row, column) {
+      const value = row[column.key];
+
+      if (column.type === "money") return money(value, 0);
+      if (column.type === "integer") return integer(value);
+      if (column.type === "percent") return percent(value);
+
+      return escapeText(value || "");
+    }
+
+    function valueCell(row, column) {
+      return `<td class="${column.type ? "num" : ""}">${formatValue(row, column)}</td>`;
+    }
+
+    function totals(rows) {
+      const total = {
+        totalEstimatedDemand:0,
+        annualEstimatedRevenue:0,
+        annualEstimatedMarginDollars:0,
+        fixedFeeWeeklyBilling:0
+      };
+
+      for (const row of rows) {
+        total.totalEstimatedDemand += Number(row.totalEstimatedDemand) || 0;
+        total.annualEstimatedRevenue += Number(row.annualEstimatedRevenue) || 0;
+        total.annualEstimatedMarginDollars += Number(row.annualEstimatedMarginDollars) || 0;
+        total.fixedFeeWeeklyBilling += Number(row.fixedFeeWeeklyBilling) || 0;
+      }
+
+      total.estimatedMarginPct = total.annualEstimatedRevenue
+        ? total.annualEstimatedMarginDollars / total.annualEstimatedRevenue * 100
+        : null;
+
+      return total;
+    }
+
+    function totalRow(label, rows, grand = false) {
+      const total = totals(rows);
+
+      const cells = COLUMNS.map((column, index) => {
+        if (index === 0) return `<td>${escapeText(label)}</td>`;
+
+        if ([
+          "totalEstimatedDemand",
+          "annualEstimatedRevenue",
+          "annualEstimatedMarginDollars",
+          "estimatedMarginPct",
+          "fixedFeeWeeklyBilling"
+        ].includes(column.key)) {
+          return `<td class="${column.type ? "num" : ""}">${formatValue(total, column)}</td>`;
+        }
+
+        return "<td></td>";
+      }).join("");
+
+      return `<tr class="${grand ? "grand-total" : "total-row"}">${cells}</tr>`;
+    }
+
+    function renderSection(label, rows, body) {
+      if (!rows.length) return;
+
+      body.push(`<tr class="section-row"><td colspan="${COLUMNS.length}">${label}</td></tr>`);
+      rows.forEach(row => {
+        body.push(`<tr class="data-row">${COLUMNS.map(column => valueCell(row, column)).join("")}</tr>`);
+      });
+      body.push(totalRow(`Total ${label.startsWith("Incremental") ? "Incremental" : "Current"}`, rows));
+    }
+
+    function renderReport() {
+      const rows = filteredRows();
+      const incremental = rows.filter(row => row.group === "Incremental OSC Customers");
+      const current = rows.filter(row => row.group === "Current OSC Customers");
+      const body = [];
+
+      renderSection("Incremental OSC Customers", incremental, body);
+      renderSection("Current OSC Customers", current, body);
+      body.push(totalRow("TOTAL OSC", rows, true));
+
+      const header = COLUMNS
+        .map(column => `<th style="width:${column.width}px">${escapeText(column.label)}</th>`)
+        .join("");
+
+      reportArea.className = "";
+      reportArea.innerHTML = `
+        <div class="table-wrap">
+          <table class="report-table">
+            <thead><tr>${header}</tr></thead>
+            <tbody>${body.join("")}</tbody>
+          </table>
+        </div>
+      `;
+
+      const refreshed = new Date().toLocaleTimeString("en-US", {
+        hour:"numeric",
+        minute:"2-digit"
+      });
+
+      summaryText.textContent = `${rows.length} rows · refreshed ${refreshed}`;
+    }
+
+    function populateCustomers() {
+      const selected = customerFilter.value || "ALL";
+      const customers = [...new Set(REPORT_ROWS.map(row => row.customer))]
+        .sort((a,b) => a.localeCompare(b));
+
+      customerFilter.innerHTML =
+        `<option value="ALL">All Customers</option>` +
+        customers.map(customer =>
+          `<option value="${escapeText(customer)}">${escapeText(customer)}</option>`
+        ).join("");
+
+      customerFilter.value = customers.includes(selected) ? selected : "ALL";
+      customerFilter.disabled = false;
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.style.display = "block";
+    }
+
+    function hideError() {
+      errorBox.style.display = "none";
+    }
+
+    async function loadWorkbookData(showLoading = true) {
+      try {
+        if (showLoading) {
+          reportArea.className = "loading";
+          reportArea.innerHTML = `<div class="spinner"></div>Loading report`;
+          summaryText.textContent = "Loading...";
+        }
+
+        const [salesforceBuffer, vroBuffer] = await Promise.all([
+          fetchWorkbookBuffer(SALESFORCE_FILE),
+          fetchWorkbookBuffer(VRO_FILE)
+        ]);
+
+        SALESFORCE_CUSTOMERS = parseSalesforce(rowsFromBuffer(salesforceBuffer));
+        VRO_DATA = parseVro(rowsFromBuffer(vroBuffer));
+        rebuildReportRows();
+        hideError();
+      } catch (error) {
+        console.error(error);
+        showError(error.message || String(error));
+        reportArea.className = "loading";
+        reportArea.innerHTML = `<strong>Unable to build the OSC Monetization report.</strong>`;
+        summaryText.textContent = "Data load failed";
+      }
+    }
+
+    function startManualCustomerListener() {
+      if (DATABASE_LISTENER_STARTED) return;
+      DATABASE_LISTENER_STARTED = true;
+
+      firebase.database()
+        .ref(MANUAL_CUSTOMERS_PATH)
+        .on("value", snapshot => {
+          MANUAL_CUSTOMERS = snapshot.val() || {};
+          rebuildReportRows();
+        }, error => {
+          console.error(error);
+          document.getElementById("configTableArea").innerHTML =
+            `<div class="empty-state">Unable to read customer configuration.</div>`;
+        });
+    }
+
+    function showView(viewName) {
+      const reportActive = viewName === "report";
+
+      document.getElementById("report-view").classList.toggle("active", reportActive);
+      document.getElementById("config-view").classList.toggle("active", !reportActive);
+      document.getElementById("nav-report").classList.toggle("active", reportActive);
+      document.getElementById("nav-config").classList.toggle("active", !reportActive);
+      document.getElementById("filterWrap").style.display = reportActive ? "flex" : "none";
+      document.getElementById("pageTitle").textContent =
+        reportActive ? "OSC Monetization" : "Customer Configuration";
+
+      if (!reportActive) renderConfigTable();
+    }
+
+    function updateEditControls() {
+      const status = document.getElementById("editStatus");
+      const addButton = document.getElementById("addCustomerButton");
+      const unlockButton = document.getElementById("unlockButton");
+
+      status.textContent = EDIT_UNLOCKED ? "Editing Unlocked" : "Editing Locked";
+      status.className = `unlock-badge ${EDIT_UNLOCKED ? "unlocked" : "locked"}`;
+      addButton.disabled = !EDIT_UNLOCKED;
+      unlockButton.textContent = EDIT_UNLOCKED ? "Editing Unlocked" : "Unlock Editing";
+      unlockButton.disabled = EDIT_UNLOCKED;
+
+      document.querySelectorAll(".config-edit-action").forEach(button => {
+        button.disabled = !EDIT_UNLOCKED;
+      });
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.add("open");
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove("open");
+    }
+
+    function openUnlockModal() {
+      if (EDIT_UNLOCKED) return;
+      document.getElementById("editPassword").value = "";
+      document.getElementById("unlockError").style.display = "none";
+      openModal("unlockModal");
+      setTimeout(() => document.getElementById("editPassword").focus(), 50);
+    }
+
+    async function unlockEditing() {
+      const digest = await sha256(document.getElementById("editPassword").value);
+
+      if (digest !== EDIT_PASSWORD_HASH) {
+        document.getElementById("unlockError").style.display = "block";
+        return;
+      }
+
+      EDIT_UNLOCKED = true;
+      sessionStorage.setItem("oscMonetizationEditUnlocked", "1");
+      closeModal("unlockModal");
+      updateEditControls();
+      renderConfigTable();
+    }
+
+    function serviceInputId(service, field) {
+      const slug = service.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      return `service-${slug}-${field}`;
+    }
+
+    function buildServiceEditorRows() {
+      const body = document.getElementById("serviceEditorBody");
+
+      body.innerHTML = SERVICE_TYPES.map((service, index) => {
+        const id = field => serviceInputId(service, field);
+
+        const customerCell = index === 0
+          ? `<td rowspan="${SERVICE_TYPES.length}">
+               <input id="manualCustomerName" type="text" placeholder="Customer name">
+             </td>`
+          : "";
+
+        const statusCell = index === 0
+          ? `<td rowspan="${SERVICE_TYPES.length}">
+               <select id="manualStatus">
+                 <option value="In Legal">In Legal</option>
+                 <option value="Closed Won">Closed Won</option>
+                 <option value="Signed">Signed</option>
+                 <option value="Live">Live</option>
+               </select>
+             </td>`
+          : "";
+
+        return `
+          <tr class="service-row disabled" data-service="${escapeText(service)}">
+            ${customerCell}
+            <td class="service-name">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+                <input id="${id("enabled")}" type="checkbox"
+                       onchange="toggleServiceRow('${escapeText(service)}')">
+                <span>${escapeText(service)}</span>
+              </label>
+            </td>
+            ${statusCell}
+            <td><input id="${id("totalEstimatedDemand")}" type="number" step="any" disabled></td>
+            <td><input id="${id("annualEstimatedRevenue")}" type="number" step="any" disabled
+                       oninput="updateEditorMarginPct('${escapeText(service)}')"></td>
+            <td><input id="${id("annualEstimatedMarginDollars")}" type="number" step="any" disabled
+                       oninput="updateEditorMarginPct('${escapeText(service)}')"></td>
+            <td><input id="${id("estimatedMarginPct")}" type="text" readonly disabled></td>
+            <td><input id="${id("fixedFeeWeeklyBilling")}" type="number" step="any" disabled></td>
+            <td><input id="${id("handlingFeePerCall")}" type="number" step="any" disabled></td>
+            <td><input id="${id("markup")}" type="number" step="any" disabled></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function toggleServiceRow(service) {
+      const enabled = document.getElementById(serviceInputId(service, "enabled")).checked;
+      const row = document.querySelector(`.service-row[data-service="${CSS.escape(service)}"]`);
+
+      row.classList.toggle("disabled", !enabled);
+
+      row.querySelectorAll('input[id^="service-"]').forEach(input => {
+        if (input.id.endsWith("-enabled")) return;
+        input.disabled = !enabled;
+      });
+
+      if (enabled) updateEditorMarginPct(service);
+    }
+
+    function updateEditorMarginPct(service) {
+      const revenue = readNumberInput(serviceInputId(service, "annualEstimatedRevenue"));
+      const margin = readNumberInput(serviceInputId(service, "annualEstimatedMarginDollars"));
+      const field = document.getElementById(serviceInputId(service, "estimatedMarginPct"));
+
+      field.value = revenue && margin !== null
+        ? `${(margin / revenue * 100).toFixed(1)}%`
+        : "";
+    }
+
+    function toggleLaunchDate() {
+      const existing = document.getElementById("manualExistingCustomer").checked;
+      const launchDate = document.getElementById("manualLaunchDate");
+      launchDate.disabled = existing;
+      if (existing) launchDate.value = "";
+    }
+
+    function findSeedRows(customer) {
+      return REPORT_ROWS.filter(row => customerCore(row.customer) === customerCore(customer));
+    }
+
+    function openCustomerEditorForCustomer(customer) {
+      const manual = findManualRecord(customer);
+      openCustomerEditor(manual?.recordId || "", customer);
+    }
+
+    function setInputValue(id, value) {
+      document.getElementById(id).value =
+        value === null || value === undefined ? "" : value;
+    }
+
+    function openCustomerEditor(recordId = "", seedCustomer = "") {
+      if (!EDIT_UNLOCKED) {
+        openUnlockModal();
+        return;
+      }
+
+      document.getElementById("editorError").style.display = "none";
+      document.getElementById("manualRecordId").value = recordId;
+      document.getElementById("editorTitle").textContent =
+        recordId ? "Edit Customer" : "Add Customer";
+      document.getElementById("deleteCustomerButton").style.display =
+        recordId ? "inline-flex" : "none";
+
+      buildServiceEditorRows();
+
+      document.getElementById("manualCustomerName").value = seedCustomer;
+      document.getElementById("manualStatus").value = "In Legal";
+      document.getElementById("manualExistingCustomer").checked = false;
+      document.getElementById("manualLaunchDate").value = "";
+      toggleLaunchDate();
+
+      const record = recordId ? MANUAL_CUSTOMERS[recordId] : null;
+
+      if (record) {
+        document.getElementById("manualCustomerName").value = record.customer || "";
+        document.getElementById("manualStatus").value = record.status || "In Legal";
+        document.getElementById("manualExistingCustomer").checked =
+          Boolean(record.existingCustomer);
+        document.getElementById("manualLaunchDate").value = record.launchDate || "";
+        toggleLaunchDate();
+
+        for (const service of SERVICE_TYPES) {
+          const settings = legacyServiceSettings(record, service);
+          if (!settings?.enabled) continue;
+
+          document.getElementById(serviceInputId(service, "enabled")).checked = true;
+          toggleServiceRow(service);
+
+          for (const field of [
+            "totalEstimatedDemand",
+            "annualEstimatedRevenue",
+            "annualEstimatedMarginDollars",
+            "fixedFeeWeeklyBilling",
+            "handlingFeePerCall",
+            "markup"
+          ]) {
+            setInputValue(serviceInputId(service, field), settings[field]);
+          }
+
+          updateEditorMarginPct(service);
+        }
+      } else if (seedCustomer) {
+        const seedRows = findSeedRows(seedCustomer);
+        if (seedRows.length) {
+          document.getElementById("manualStatus").value =
+            seedRows[0].dealStatus && seedRows[0].dealStatus !== "Multiple"
+              ? seedRows[0].dealStatus
+              : "In Legal";
+
+          const serviceNames = new Set();
+
+          seedRows.forEach(row => {
+            if (row.serviceType === "Multiple" && row.serviceTypes) {
+              row.serviceTypes.forEach(service => serviceNames.add(service));
+            } else if (SERVICE_TYPES.includes(row.serviceType)) {
+              serviceNames.add(row.serviceType);
+            }
+          });
+
+          serviceNames.forEach(service => {
+            document.getElementById(serviceInputId(service, "enabled")).checked = true;
+            toggleServiceRow(service);
+          });
+
+          if (serviceNames.size === 1) {
+            const row = seedRows[0];
+            const service = [...serviceNames][0];
+
+            setInputValue(serviceInputId(service, "totalEstimatedDemand"), row.totalEstimatedDemand);
+            setInputValue(serviceInputId(service, "annualEstimatedRevenue"), row.annualEstimatedRevenue);
+            setInputValue(serviceInputId(service, "annualEstimatedMarginDollars"), row.annualEstimatedMarginDollars);
+            setInputValue(serviceInputId(service, "fixedFeeWeeklyBilling"), row.fixedFeeWeeklyBilling);
+            setInputValue(serviceInputId(service, "handlingFeePerCall"), row.handlingFeePerCall);
+            setInputValue(serviceInputId(service, "markup"), row.markup);
+            updateEditorMarginPct(service);
+          }
+
+          const matched = findMatchedVroCustomer(seedCustomer);
+          const firstDate = matched?.vros
+            ?.map(vro => vro.opened)
+            .filter(Boolean)
+            .sort((a,b) => a - b)[0];
+
+          if (firstDate) {
+            const yearStart = new Date(VRO_DATA.latestDate.getFullYear(), 0, 1);
+
+            if (firstDate < yearStart) {
+              document.getElementById("manualExistingCustomer").checked = true;
+            } else {
+              document.getElementById("manualLaunchDate").value = dateKey(firstDate);
+            }
+
+            toggleLaunchDate();
+          }
+        }
+      }
+
+      openModal("customerEditorModal");
+    }
+
+    function readNumberInput(id) {
+      const value = document.getElementById(id).value;
+      return value === "" ? null : Number(value);
+    }
+
+    async function saveManualCustomer() {
+      if (!EDIT_UNLOCKED) return;
+
+      const recordId = document.getElementById("manualRecordId").value;
+      const customer = document.getElementById("manualCustomerName").value.trim();
+      const status = document.getElementById("manualStatus").value;
+      const existingCustomer = document.getElementById("manualExistingCustomer").checked;
+      const launchDate = existingCustomer
+        ? ""
+        : document.getElementById("manualLaunchDate").value;
+      const services = {};
+      let selectedCount = 0;
+
+      if (!customer) {
+        showEditorError("Customer name is required.");
+        return;
+      }
+
+      for (const service of SERVICE_TYPES) {
+        const enabled = document.getElementById(serviceInputId(service, "enabled")).checked;
+        if (!enabled) continue;
+
+        selectedCount += 1;
+
+        services[service] = {
+          enabled:true,
+          totalEstimatedDemand:readNumberInput(serviceInputId(service, "totalEstimatedDemand")),
+          annualEstimatedRevenue:readNumberInput(serviceInputId(service, "annualEstimatedRevenue")),
+          annualEstimatedMarginDollars:readNumberInput(serviceInputId(service, "annualEstimatedMarginDollars")),
+          fixedFeeWeeklyBilling:readNumberInput(serviceInputId(service, "fixedFeeWeeklyBilling")),
+          handlingFeePerCall:readNumberInput(serviceInputId(service, "handlingFeePerCall")),
+          markup:readNumberInput(serviceInputId(service, "markup"))
+        };
+      }
+
+      if (!selectedCount) {
+        showEditorError("Select at least one service type.");
+        return;
+      }
+
+      const payload = {
+        customer,
+        status,
+        existingCustomer,
+        launchDate,
+        services,
+        updatedAt:firebase.database.ServerValue.TIMESTAMP,
+        updatedBy:firebase.auth().currentUser?.email || ""
+      };
+
+      const saveButton = document.getElementById("saveCustomerButton");
+      saveButton.disabled = true;
+      saveButton.textContent = "Saving...";
+
+      try {
+        const ref = recordId
+          ? firebase.database().ref(`${MANUAL_CUSTOMERS_PATH}/${recordId}`)
+          : firebase.database().ref(MANUAL_CUSTOMERS_PATH).push();
+
+        await ref.set(payload);
+        closeModal("customerEditorModal");
+      } catch (error) {
+        showEditorError(error.message || String(error));
+      } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = "Save Customer";
+      }
+    }
+
+    function showEditorError(message) {
+      const box = document.getElementById("editorError");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    async function deleteManualCustomer(recordId) {
+      if (!EDIT_UNLOCKED || !recordId) return;
+
+      const record = MANUAL_CUSTOMERS[recordId];
+      if (!record) return;
+
+      if (!window.confirm(`Delete ${record.customer || "this customer"} configuration?`)) {
+        return;
+      }
+
+      await firebase.database()
+        .ref(`${MANUAL_CUSTOMERS_PATH}/${recordId}`)
+        .remove();
+    }
+
+    async function deleteCurrentEditorCustomer() {
+      const recordId = document.getElementById("manualRecordId").value;
+      if (!recordId) return;
+
+      await deleteManualCustomer(recordId);
+      closeModal("customerEditorModal");
+    }
+
+    function renderConfigSection(label, rows, body) {
+      if (!rows.length) return;
+
+      body.push(`<tr class="section-row"><td colspan="${COLUMNS.length}">${label}</td></tr>`);
+
+      rows.forEach(row => {
+        body.push(`
+          <tr class="data-row">
+            <td>
+              <button
+                class="config-customer-link config-edit-action"
+                data-customer="${escapeText(row.customer)}"
+                onclick="openCustomerEditorForCustomer(this.dataset.customer)"
+                ${EDIT_UNLOCKED ? "" : "disabled"}
+              >${escapeText(row.customer)}</button>
+            </td>
+            ${COLUMNS.slice(1).map(column => valueCell(row, column)).join("")}
+          </tr>
+        `);
+      });
+    }
+
+    function renderConfigTable() {
+      const area = document.getElementById("configTableArea");
+      const incremental = REPORT_ROWS.filter(row => row.group === "Incremental OSC Customers");
+      const current = REPORT_ROWS.filter(row => row.group === "Current OSC Customers");
+      const body = [];
+
+      renderConfigSection("Incremental OSC Customers", incremental, body);
+      renderConfigSection("Current OSC Customers", current, body);
+
+      const header = COLUMNS
+        .map(column => `<th style="width:${column.width}px">${escapeText(column.label)}</th>`)
+        .join("");
+
+      area.className = "";
+      area.innerHTML = REPORT_ROWS.length
+        ? `
+          <div class="table-wrap">
+            <table class="config-table">
+              <thead><tr>${header}</tr></thead>
+              <tbody>${body.join("")}</tbody>
+            </table>
+          </div>
+        `
+        : `<div class="empty-state">No customers available.</div>`;
+
+      document.getElementById("configSummary").textContent =
+        `${REPORT_ROWS.length} rows`;
+      updateEditControls();
+    }
+
+    function checkLogin() {
+      const password = document.getElementById("login-pass").value;
+      const error = document.getElementById("login-error");
+
+      error.style.display = "none";
+
+      firebase.auth()
+        .signInWithEmailAndPassword(MASTER_EMAIL, password)
+        .catch(() => {
+          error.style.display = "block";
+        });
+    }
+
+    function startApp() {
+      if (window.__oscMonetizationStarted) return;
+      window.__oscMonetizationStarted = true;
+
+      buildServiceEditorRows();
+      customerFilter.addEventListener("change", renderReport);
+      updateEditControls();
+      startManualCustomerListener();
+      loadWorkbookData(true);
+      setInterval(() => loadWorkbookData(false), AUTO_REFRESH_MS);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+
+      firebase.auth().onAuthStateChanged(user => {
+        if (user) {
+          document.getElementById("login-overlay").style.display = "none";
+          startApp();
+        } else {
+          document.getElementById("login-overlay").style.display = "flex";
+        }
+      });
+    });
+  </script>
+</body>
+</html>
