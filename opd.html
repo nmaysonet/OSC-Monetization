@@ -1158,7 +1158,7 @@
             </section>
           </div>
 
-          <div class="opd-footer"><strong>Workbook-derived:</strong> Maintenance ECDs are unique Order + task-program items, so PM, DOT, A/C, and LTS tasks on the same order count separately. PM matches the five approved PM task phrases, DOT matches ANNUAL INSPECTION, A/C matches GARDA AC CHECK, and LTS matches GARDA LTS SYSTEM CHECK. Achievable Compliance and Scheduling Gap use unique VINs from the PM, DOT, and LTS tabs. Duplicate VIN rows use OR logic: if either mileage or time/frequency exceeds 100%, the VIN is overdue. A noncompliant VIN is scheduled only when every overdue requirement has a matching VRO with a valid Column L ECD and the order is not in Unassigned ROs.</div>
+          <div class="opd-footer"><strong>Workbook-derived:</strong> Maintenance ECDs are unique Order + task-program items, so PM, DOT, A/C, and LTS tasks on the same order count separately. PM matches the five approved PM task phrases, DOT matches ANNUAL INSPECTION, A/C matches GARDA AC CHECK, and LTS matches GARDA LTS SYSTEM CHECK. Achievable Compliance and Scheduling Gap use unique VINs from the PM, DOT, and LTS tabs. Duplicate VIN rows use OR logic: if either mileage or time/frequency exceeds 100%, the VIN is overdue. The dashboard separates total scheduled maintenance VINs from scheduled overdue VINs: only overdue VINs can increase Achievable Compliance. A noncompliant VIN is scheduled only when every overdue requirement has a matching VRO with a valid Column L ECD and the order is not in Unassigned ROs. Missing ECDs count existing open task items with no valid ECD; overdue VINs with no VRO remain in Scheduling Gap rather than the Missing ECD bucket.</div>
         </div>
       </div>
     </section>
@@ -1484,19 +1484,66 @@ function scheduledRequirementsByVin(items){
 }
 function projectedCompliance(program,currentCompliance,source,maintenanceItems){
   if(!source||!source.totalUnits){
-    return {achievable:null,gap:null,totalUnits:0,scheduledRecoverableUnits:0,unscheduledNoncompliantUnits:0};
+    return {
+      achievable:null,
+      gap:null,
+      totalUnits:0,
+      scheduledRecoverableUnits:0,
+      unscheduledNoncompliantUnits:0
+    };
   }
+
+  const relevantPrograms=program==="lts"
+    ?new Set(["pm","ac","lts","coolant"])
+    :new Set([program]);
+
+  const programItems=maintenanceItems.filter(item=>
+    relevantPrograms.has(item.program)&&item.vin
+  );
+
+  const vroByVin=new Map();
+  programItems.forEach(item=>{
+    if(!vroByVin.has(item.vin)){
+      vroByVin.set(item.vin,{
+        items:[],
+        hasScheduled:false,
+        hasUnassigned:false,
+        hasUnassignedWithEcd:false,
+        hasUnassignedMissingEcd:false,
+        hasNonUnassignedMissingEcd:false
+      });
+    }
+
+    const record=vroByVin.get(item.vin);
+    const hasEcd=Boolean(parseDate(item.due));
+    record.items.push(item);
+
+    if(item.status==="UNASSIGNED ROS"){
+      record.hasUnassigned=true;
+      if(hasEcd)record.hasUnassignedWithEcd=true;
+      else record.hasUnassignedMissingEcd=true;
+    }else if(hasEcd){
+      record.hasScheduled=true;
+    }else{
+      record.hasNonUnassignedMissingEcd=true;
+    }
+  });
+
   const scheduled=scheduledRequirementsByVin(maintenanceItems);
-  let scheduledRecoverableUnits=0,partiallyScheduledUnits=0;
+  let scheduledRecoverableUnits=0;
+  let partiallyScheduledUnits=0;
   const recoveryBuckets=emptyEcd();
 
   Object.entries(source.units).forEach(([vin,unit])=>{
     const overdueRequirements=new Set(unit.overdueRequirements||[]);
     if(!overdueRequirements.size)return;
+
     const scheduledForVin=scheduled.get(vin);
     if(!scheduledForVin)return;
+
     let covered=0;
     const recoveryDates=[];
+
     overdueRequirements.forEach(requirement=>{
       const matches=scheduledForVin.get(requirement)||[];
       if(matches.length){
@@ -1507,41 +1554,169 @@ function projectedCompliance(program,currentCompliance,source,maintenanceItems){
         });
       }
     });
+
     if(covered===overdueRequirements.size){
       scheduledRecoverableUnits++;
-      // A VIN becomes fully recoverable when its latest required scheduled task is due.
+
       if(recoveryDates.length){
-        const latest=new Date(Math.max(...recoveryDates.map(date=>date.getTime())));
+        const latest=new Date(
+          Math.max(...recoveryDates.map(date=>date.getTime()))
+        );
         const bucket=ecdBucket(latest,selectedReportDate());
-        if(recoveryBuckets[bucket]!==undefined)recoveryBuckets[bucket]++;
+        if(recoveryBuckets[bucket]!==undefined){
+          recoveryBuckets[bucket]++;
+        }
       }
     }else if(covered>0){
       partiallyScheduledUnits++;
     }
   });
 
-  const totalUnits=source.totalUnits;
+  const sourceOverdueVins=new Set(
+    Object.entries(source.units)
+      .filter(([,unit])=>(unit.overdueRequirements||[]).length)
+      .map(([vin])=>vin)
+  );
+
+  let scheduledVroVins=0;
+  let scheduledOverdueSourceVins=0;
+  let scheduledCompliantSourceVins=0;
+  let scheduledVinsNotInSource=0;
+  let unassignedVroVins=0;
+  let unassignedWithEcdVins=0;
+  let unassignedMissingEcdVins=0;
+  let nonUnassignedMissingEcdVins=0;
+
+  vroByVin.forEach((record,vin)=>{
+    if(record.hasScheduled){
+      scheduledVroVins++;
+
+      if(sourceOverdueVins.has(vin)){
+        scheduledOverdueSourceVins++;
+      }else if(source.units[vin]){
+        scheduledCompliantSourceVins++;
+      }else{
+        scheduledVinsNotInSource++;
+      }
+    }else if(record.hasUnassigned){
+      unassignedVroVins++;
+    }
+
+    if(!record.hasScheduled&&record.hasUnassignedWithEcd){
+      unassignedWithEcdVins++;
+    }
+    if(!record.hasScheduled&&record.hasUnassignedMissingEcd){
+      unassignedMissingEcdVins++;
+    }
+    if(!record.hasScheduled&&record.hasNonUnassignedMissingEcd){
+      nonUnassignedMissingEcdVins++;
+    }
+  });
+
+  let overdueVinsWithAnyVro=0;
+  let overdueUnassignedVins=0;
+  let overdueMissingEcdVins=0;
+
+  sourceOverdueVins.forEach(vin=>{
+    const record=vroByVin.get(vin);
+    if(!record)return;
+
+    overdueVinsWithAnyVro++;
+
+    if(!record.hasScheduled&&record.hasUnassigned){
+      overdueUnassignedVins++;
+    }
+
+    if(
+      !record.hasScheduled&&
+      (
+        record.hasUnassignedMissingEcd||
+        record.hasNonUnassignedMissingEcd
+      )
+    ){
+      overdueMissingEcdVins++;
+    }
+  });
+
   const sourceNoncompliantUnits=source.sourceNoncompliantUnits;
-  const unscheduledNoncompliantUnits=Math.max(0,sourceNoncompliantUnits-scheduledRecoverableUnits);
-  const sourceCompliance=source.sourceCompliantUnits/totalUnits;
-  const sourceProjectedCompliance=Math.min(1,(source.sourceCompliantUnits+scheduledRecoverableUnits)/totalUnits);
+  const overdueNoVroVins=Math.max(
+    0,
+    sourceNoncompliantUnits-overdueVinsWithAnyVro
+  );
+  const unscheduledNoncompliantUnits=Math.max(
+    0,
+    sourceNoncompliantUnits-scheduledRecoverableUnits
+  );
+
+  const sourceCompliance=source.sourceCompliantUnits/source.totalUnits;
+  const sourceProjectedCompliance=Math.min(
+    1,
+    (source.sourceCompliantUnits+scheduledRecoverableUnits)/source.totalUnits
+  );
   const officialCurrent=Number(currentCompliance);
-  // Use the higher of official current compliance and the unique-VIN projection to avoid double-counting stale rows.
+
   const achievable=Number.isFinite(officialCurrent)
-    ?Math.min(1,Math.max(officialCurrent,sourceProjectedCompliance))
+    ?Math.min(
+        1,
+        Math.max(officialCurrent,sourceProjectedCompliance)
+      )
     :sourceProjectedCompliance;
-  // Scheduling gap is the share of currently noncompliant VINs not fully scheduled.
-  const gap=sourceNoncompliantUnits?unscheduledNoncompliantUnits/sourceNoncompliantUnits:0;
+
+  const gap=sourceNoncompliantUnits
+    ?unscheduledNoncompliantUnits/sourceNoncompliantUnits
+    :0;
+
+  const itemAudit={
+    totalItems:programItems.length,
+    scheduledItems:programItems.filter(item=>
+      item.status!=="UNASSIGNED ROS"&&Boolean(parseDate(item.due))
+    ).length,
+    unassignedItems:programItems.filter(item=>
+      item.status==="UNASSIGNED ROS"
+    ).length,
+    unassignedWithEcdItems:programItems.filter(item=>
+      item.status==="UNASSIGNED ROS"&&Boolean(parseDate(item.due))
+    ).length,
+    unassignedMissingEcdItems:programItems.filter(item=>
+      item.status==="UNASSIGNED ROS"&&!parseDate(item.due)
+    ).length,
+    nonUnassignedMissingEcdItems:programItems.filter(item=>
+      item.status!=="UNASSIGNED ROS"&&!parseDate(item.due)
+    ).length
+  };
 
   return {
-    program,achievable,gap,totalUnits,
-    officialCurrent:Number.isFinite(officialCurrent)?officialCurrent:null,
-    sourceCompliance,sourceProjectedCompliance,
+    program,
+    achievable,
+    gap,
+    totalUnits:source.totalUnits,
+    officialCurrent:Number.isFinite(officialCurrent)
+      ?officialCurrent
+      :null,
+    sourceCompliance,
+    sourceProjectedCompliance,
     sourceCompliantUnits:source.sourceCompliantUnits,
     sourceNoncompliantUnits,
-    scheduledRecoverableUnits,partiallyScheduledUnits,unscheduledNoncompliantUnits,
+    scheduledRecoverableUnits,
+    partiallyScheduledUnits,
+    unscheduledNoncompliantUnits,
     duplicateVinCount:source.duplicateVinCount,
-    recoveryBuckets
+    recoveryBuckets,
+
+    scheduledVroVins,
+    scheduledOverdueSourceVins,
+    scheduledCompliantSourceVins,
+    scheduledVinsNotInSource,
+    unassignedVroVins,
+    unassignedWithEcdVins,
+    unassignedMissingEcdVins,
+    nonUnassignedMissingEcdVins,
+
+    overdueVinsWithAnyVro,
+    overdueUnassignedVins,
+    overdueMissingEcdVins,
+    overdueNoVroVins,
+    itemAudit
   };
 }
 function usefulRowsByCode(aoa,warnings,sheetName){
@@ -1881,6 +2056,18 @@ function parseWorkbook(buffer){
     };
   });
 
+  const pmProjection=maintenance.pm?.projection;
+  if(pmProjection){
+    warnings.push(
+      `PM scheduling audit: ${pmProjection.scheduledVroVins} unique PM VINs have a valid ECD outside Unassigned ROs. `+
+      `${pmProjection.scheduledRecoverableUnits} are currently overdue and can improve achievable compliance; `+
+      `${pmProjection.scheduledCompliantSourceVins} are already compliant; `+
+      `${pmProjection.scheduledVinsNotInSource} are not present in the PM source tab. `+
+      `${pmProjection.unassignedVroVins} PM VINs remain in Unassigned ROs, and `+
+      `${pmProjection.itemAudit.unassignedMissingEcdItems+pmProjection.itemAudit.nonUnassignedMissingEcdItems} open PM task item(s) have no valid ECD.`
+    );
+  }
+
   return {
     metadata:{
       loadedAt:new Date().toISOString(),
@@ -1993,14 +2180,62 @@ function renderVendedRepair(){
 function renderVrEcd(){$("#vr-ecd-body").innerHTML=ECD_ROWS.map(r=>`<tr><td class="label">${r.label}</td>${cell(dashboardData.vrEcd[r.key],"number",true)}</tr>`).join("");}
 function projectionCell(value,projection,kind){
   if(!projection)return cell(value,"percent");
+
   const note=kind==="achievable"
-    ?`+${projection.scheduledRecoverableUnits.toLocaleString()} fully scheduled VINs`
-    :`${projection.unscheduledNoncompliantUnits.toLocaleString()} of ${projection.sourceNoncompliantUnits.toLocaleString()} overdue VINs`;
+    ?`${projection.scheduledRecoverableUnits.toLocaleString()} overdue VINs lift compliance · ${projection.scheduledVroVins.toLocaleString()} total scheduled`
+    :`${projection.overdueNoVroVins.toLocaleString()} no VRO · ${projection.overdueUnassignedVins.toLocaleString()} unassigned`;
+
   const title=kind==="achievable"
-    ?`Official current: ${pct(projection.officialCurrent)}. Unique-VIN source: ${pct(projection.sourceCompliance)} (${projection.sourceCompliantUnits}/${projection.totalUnits}). Unique-VIN scheduled projection: ${pct(projection.sourceProjectedCompliance)}. Fully scheduled noncompliant VINs: ${projection.scheduledRecoverableUnits}.`
-    :`Scheduling gap = noncompliant unique VINs not fully scheduled / all noncompliant unique VINs. A VIN is scheduled only when every overdue requirement has a matching VRO, a valid ECD, and a status other than Unassigned ROs. Partially scheduled VINs: ${projection.partiallyScheduledUnits}.`;
+    ?[
+        `Only currently overdue unique VINs can increase Achievable Compliance.`,
+        `${projection.scheduledVroVins} unique VINs have a non-unassigned maintenance VRO with a valid ECD.`,
+        `${projection.scheduledOverdueSourceVins} are overdue in the source tab.`,
+        `${projection.scheduledCompliantSourceVins} are already compliant and are already represented in current compliance.`,
+        `${projection.scheduledVinsNotInSource} scheduled VIN(s) were not found in the source tab.`,
+        `Official current: ${pct(projection.officialCurrent)}.`,
+        `Unique-VIN source: ${pct(projection.sourceCompliance)} (${projection.sourceCompliantUnits}/${projection.totalUnits}).`,
+        `Unique-VIN scheduled projection: ${pct(projection.sourceProjectedCompliance)}.`
+      ].join(" ")
+    :[
+        `Scheduling Gap = overdue unique VINs not fully scheduled / all overdue unique VINs.`,
+        `${projection.overdueNoVroVins} overdue VINs have no matching VRO.`,
+        `${projection.overdueUnassignedVins} overdue VINs have a matching VRO but remain in Unassigned ROs.`,
+        `${projection.overdueMissingEcdVins} overdue VINs have a VRO with no valid ECD.`,
+        `${projection.partiallyScheduledUnits} VINs have only part of their overdue requirements scheduled.`
+      ].join(" ");
+
   return `<td class="num ${isBlank(value)?"empty":""}" title="${escapeHtml(title)}">
     <strong>${formatValue(value,"percent")}</strong>
+    <span class="cell-note">${escapeHtml(note)}</span>
+  </td>`;
+}
+function maintenanceEcdCell(value,metric,rowKey){
+  if(
+    rowKey!=="missing"||
+    !metric?.projection?.itemAudit
+  ){
+    return cell(value,"number",true);
+  }
+
+  const audit=metric.projection.itemAudit;
+  const missingTotal=
+    audit.unassignedMissingEcdItems+
+    audit.nonUnassignedMissingEcdItems;
+
+  const note=
+    `${missingTotal.toLocaleString()} open task item${missingTotal===1?"":"s"} missing ECD · `+
+    `${audit.unassignedMissingEcdItems.toLocaleString()} unassigned`;
+
+  const title=[
+    `${audit.totalItems} open maintenance task item(s) matched.`,
+    `${audit.scheduledItems} have a valid ECD and are outside Unassigned ROs.`,
+    `${audit.unassignedWithEcdItems} have an ECD but remain in Unassigned ROs and are not considered scheduled.`,
+    `${audit.unassignedMissingEcdItems} are in Unassigned ROs with no valid ECD.`,
+    `${audit.nonUnassignedMissingEcdItems} active item(s) are missing a valid ECD.`
+  ].join(" ");
+
+  return `<td class="num ${isBlank(value)?"empty":""}" title="${escapeHtml(title)}">
+    <strong>${formatValue(value,"number")}</strong>
     <span class="cell-note">${escapeHtml(note)}</span>
   </td>`;
 }
@@ -2027,7 +2262,7 @@ function renderMaintenance(){
       return `<tr>
         <td class="sub-label">${row.label}</td>
         ${cell(prior)}
-        ${cell(current,"number",true)}
+        ${maintenanceEcdCell(current,metric,row.key)}
         ${deltaCell(prior,current)}
         <td></td><td></td>
       </tr>`;
