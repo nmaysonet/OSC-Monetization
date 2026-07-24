@@ -985,10 +985,21 @@
 
     .cell-note {
       display:block;
-      margin-top:2px;
+      width:100%;
+      max-width:100%;
+      margin-top:3px;
       color:#8a949d;
       font-size:9px;
       font-weight:650;
+      line-height:1.25;
+      white-space:normal;
+      overflow-wrap:anywhere;
+      word-break:normal;
+    }
+
+    .opd-table td.num .cell-note {
+      white-space:normal;
+      overflow-wrap:anywhere;
     }
 
     .empty { color:#8a949d!important; }
@@ -1083,7 +1094,7 @@
           <label for="report-date">Report Date</label>
           <input type="date" id="report-date" title="ECD calculation date">
         </div>
-        <button class="btn btn-gold" id="export-btn" disabled>Export All Tables</button>
+        <button class="btn btn-gold" id="export-btn" disabled>Export Tables & Detail</button>
       </div>
     </header>
 
@@ -1158,7 +1169,7 @@
             </section>
           </div>
 
-          <div class="opd-footer"><strong>Workbook-derived:</strong> PM REPCLASS is the maintenance population gate. A single open order may count separately under PM, DOT, A/C, and LTS when its task text contains those services. GARDA AC CHECK routes to A/C, ANNUAL INSPECTION routes to DOT, the approved PM task names route to PM, and any other PM-REPCLASS work that is not solely an A/C or DOT task also routes to PM. ECD buckets count unique Order + program items. Achievable Compliance uses the current GARDA FLASH percentage plus unique currently overdue VINs with valid non-unassigned ECDs; each date-bucket row shows the compliance achievable from completing the eligible VINs in that bucket. Scheduling Gap uses unique VINs from the PM, DOT, and LTS tabs that are overdue or coming due and do not yet have every required task on a non-unassigned VRO with a valid ECD. Duplicate VIN interval rows use OR logic: if mileage or time/frequency reaches the threshold, the VIN is controlled by that requirement.</div>
+          <div class="opd-footer"><strong>Workbook-derived:</strong> A single open order may count separately under PM, DOT, A/C, and LTS. ANNUAL INSPECTION routes to DOT and GARDA AC CHECK routes to A/C whenever those phrases appear anywhere inside the combined VRO task text, regardless of the order’s REPCLASS. PM remains driven by a PM REPCLASS and counts approved PM task names or other remaining PM-repclass task content after the separate DOT, A/C, LTS, and coolant phrases are removed. Repeated task phrases on one order are deduplicated by unique Order + program. Achievable Compliance uses the current GARDA FLASH percentage plus unique currently overdue VINs with valid non-unassigned ECDs; each date-bucket row shows the compliance achievable from completing the eligible VINs in that bucket. Scheduling Gap uses unique VINs from the PM, DOT, and LTS tabs that are overdue or coming due and do not yet have every required task on a non-unassigned VRO with a valid ECD. Duplicate VIN interval rows use OR logic: if mileage or time/frequency reaches the threshold, the VIN is controlled by that requirement.</div>
         </div>
       </div>
     </section>
@@ -1276,19 +1287,21 @@ function sheetAoa(workbook,predicate){const name=workbook.SheetNames.find(n=>pre
 function validateHeader(aoa,checks,sheetName,warnings){const header=aoa[0]||[];checks.forEach(([idx,expected])=>{if(!upper(header[idx]).includes(expected)){warnings.push(`${sheetName}: expected ${expected} in column ${XLSX.utils.encode_col(idx)}, found “${clean(header[idx])||"blank"}”. Fallback column positions were still used.`);}});}
 function buildRepclassMap(aoa){const map=new Map();for(let i=1;i<aoa.length;i++){const rep=upper(aoa[i]?.[0]);const service=upper(aoa[i]?.[1]);if(rep&&service)map.set(rep,service);}return map;}
 function maintenanceTaskTypes(task,service){
-  if(service!=="PM")return [];
-
   const text=upper(task);
   const types=new Set();
-  const hasPmTask=PM_TASK_PHRASES.some(phrase=>text.includes(phrase));
+
+  const hasPmTask=PM_TASK_PHRASES.some(
+    phrase=>text.includes(phrase)
+  );
   const hasDot=text.includes("ANNUAL INSPECTION");
   const hasAc=text.includes("GARDA AC CHECK");
   const hasLts=text.includes("GARDA LTS SYSTEM CHECK");
   const hasCoolant=text.includes("GARDA COOLANT SYSTEM CHECK");
 
   /*
-    REPCLASS is the maintenance population gate.
-    Task text allows one PM-repclass order to create separate program items.
+    DOT, A/C, LTS, and coolant are task-driven. The phrases can appear
+    alone, multiple times, or anywhere inside a combined task string.
+    They are not rejected because the order has a non-PM REPCLASS.
   */
   if(hasDot)types.add("dot");
   if(hasAc)types.add("ac");
@@ -1296,10 +1309,32 @@ function maintenanceTaskTypes(task,service){
   if(hasCoolant)types.add("coolant");
 
   /*
-    Count PM when an approved PM task is present. Also count any other
-    PM-repclass work that is not solely an A/C or DOT-only task.
+    PM is REPCLASS-driven. Remove the task phrases that belong to the
+    separate programs; any remaining task content is PM-repclass work.
+    Approved named PM tasks always count as PM.
   */
-  if(hasPmTask||(!hasAc&&!hasDot))types.add("pm");
+  if(service==="PM"){
+    let remaining=text;
+
+    [
+      ...PM_TASK_PHRASES,
+      "ANNUAL INSPECTION",
+      "DOT INSPECTION",
+      "GARDA AC CHECK",
+      "GARDA LTS SYSTEM CHECK",
+      "GARDA COOLANT SYSTEM CHECK"
+    ].forEach(phrase=>{
+      remaining=remaining.split(phrase).join(" ");
+    });
+
+    const hasOtherPmWork=Boolean(
+      remaining.replace(/[^A-Z0-9]/g,"")
+    );
+
+    if(hasPmTask||hasOtherPmWork||!text){
+      types.add("pm");
+    }
+  }
 
   return [...types];
 }
@@ -1365,8 +1400,19 @@ function parseVroRows(aoa,repclassMap,reportDate,warnings){
     maintenanceTaskTypes(task,service).forEach(program=>{
       const itemKey=`${order}|${program}`;
       const item={
-        itemKey,order,program,vin,customer,branchCode,task,
-        due:row[11],status
+        itemKey,
+        order,
+        program,
+        vin,
+        customer,
+        branchCode,
+        branchName:BRANCH_BY_CODE.get(branchCode)?.name||customer,
+        repclass,
+        service,
+        task,
+        due:row[11],
+        status,
+        opened:row[8]
       };
       maintenanceItems.set(
         itemKey,
@@ -2152,9 +2198,6 @@ function parseWorkbook(buffer){
     const compliance=flash.maintenance[program.key].compliance;
     const source=program.key==="ac"?null:complianceSources[program.key];
     const projection=program.key==="ac"?null:projectedCompliance(program.key,compliance,source,vroResult.maintenanceItems);
-    if(projection&&!isBlank(compliance)&&Math.abs(projection.sourceCompliance-Number(compliance))>=0.005){
-      warnings.push(`${program.label}: GARDA FLASH is ${pct(compliance)}; unique-VIN source compliance on ${source.sheetName} is ${pct(projection.sourceCompliance)}. Achievable Compliance uses the higher of the official baseline and the unique-VIN scheduled projection.`);
-    }
     maintenance[program.key]={
       ecd:summarizeMaintenanceItems(vroResult.maintenanceItems,program.key),
       compliance,
@@ -2166,14 +2209,6 @@ function parseWorkbook(buffer){
     };
   });
 
-  const pmProjection=maintenance.pm?.projection;
-  if(pmProjection){
-    warnings.push(
-      `PM audit: ${maintenance.pm.ecd.pastDue+maintenance.pm.ecd.missing+maintenance.pm.ecd.due03+maintenance.pm.ecd.due47+maintenance.pm.ecd.due814+maintenance.pm.ecd.due14} open PM-repclass ECD item(s) were classified. `+
-      `${pmProjection.scheduledRecoverableUnits} unique currently overdue VINs have a valid scheduled PM ECD and can increase achievable compliance. `+
-      `${pmProjection.unscheduledAttentionUnits} of ${pmProjection.attentionUnits} unique VINs that are overdue or coming due are not fully scheduled.`
-    );
-  }
 
   return {
     metadata:{
@@ -2191,6 +2226,12 @@ function parseWorkbook(buffer){
     maintenance,
     vendor:flash.vendor,
     ers:flash.ers,
+    detailData:{
+      reportDate:$("#report-date").value,
+      vrOrders,
+      maintenanceItems:vroResult.maintenanceItems,
+      complianceSources
+    },
     warnings
   };
 }
@@ -2610,6 +2651,402 @@ function makeConsolidatedSheet(sections){
 
   return ws;
 }
+
+const EXPORT_BUCKET_LABELS={
+  pastDue:"Past Due",
+  missing:"Missing ECD",
+  due03:"Due 0–3 Days",
+  due47:"Due 4–7 Days",
+  due814:"Due 8–14 Days",
+  due14:"Due 14+ Days"
+};
+const EXPORT_PROGRAM_LABELS={
+  pm:"PM",
+  dot:"DOT",
+  ac:"A/C",
+  lts:"LTS",
+  coolant:"Coolant System Check"
+};
+const EXPORT_BUCKET_ORDER={
+  pastDue:0,
+  missing:1,
+  due03:2,
+  due47:3,
+  due814:4,
+  due14:5
+};
+function exportDate(value){
+  const date=parseDate(value);
+  return date||null;
+}
+function dateText(value){
+  const date=parseDate(value);
+  if(!date)return "";
+  return date.toLocaleDateString("en-US",{
+    month:"2-digit",
+    day:"2-digit",
+    year:"numeric"
+  });
+}
+function uniqueText(values){
+  return [...new Set(
+    values
+      .map(value=>clean(value))
+      .filter(Boolean)
+  )].join(" | ");
+}
+function duePercentText(value){
+  const number=Number(value);
+  if(!Number.isFinite(number))return "";
+  return `${(number*100).toFixed(1)}%`;
+}
+function schedulingReason(record){
+  const reasons=[];
+  if(!record.vin)reasons.push("Missing VIN");
+  if(record.status==="UNASSIGNED ROS")reasons.push("Unassigned ROs");
+  if(!parseDate(record.due))reasons.push("Missing ECD");
+  return reasons.length?reasons.join("; "):"Scheduled";
+}
+function makeDetailSheet(rows,widths,dateColumns=[]){
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=widths.map(width=>({wch:width}));
+  ws["!freeze"]={xSplit:0,ySplit:1};
+
+  if(rows.length){
+    ws["!autofilter"]={
+      ref:XLSX.utils.encode_range({
+        s:{r:0,c:0},
+        e:{r:rows.length-1,c:rows[0].length-1}
+      })
+    };
+  }
+
+  const range=XLSX.utils.decode_range(ws["!ref"]||"A1:A1");
+  const reasonColumn=(rows[0]||[]).findIndex(
+    header=>upper(header)==="REASON"
+  );
+  const statusColumn=(rows[0]||[]).findIndex(
+    header=>upper(header)==="SCHEDULING STATUS"
+  );
+
+  for(let row=0;row<=range.e.r;row++){
+    for(let col=0;col<=range.e.c;col++){
+      const ref=XLSX.utils.encode_cell({r:row,c:col});
+      if(!ws[ref])ws[ref]={t:"s",v:""};
+
+      const cell=ws[ref];
+      const header=row===0;
+      const alternate=row>0&&row%2===0;
+
+      cell.s={
+        font:{
+          name:"Raleway",
+          sz:10,
+          bold:header,
+          color:{
+            rgb:header
+              ?"FFFFFF"
+              :col===reasonColumn
+                ?"9C1C14"
+                :"20262D"
+          }
+        },
+        fill:{
+          fgColor:{
+            rgb:header
+              ?"1F4E78"
+              :alternate
+                ?"F7F9FB"
+                :"FFFFFF"
+          }
+        },
+        alignment:{
+          horizontal:header?"center":"left",
+          vertical:"center",
+          wrapText:true
+        },
+        border:{
+          top:{style:"thin",color:{rgb:"C5CDD5"}},
+          bottom:{style:"thin",color:{rgb:"C5CDD5"}},
+          left:{style:"thin",color:{rgb:"C5CDD5"}},
+          right:{style:"thin",color:{rgb:"C5CDD5"}}
+        }
+      };
+
+      if(
+        row>0&&
+        col===statusColumn&&
+        upper(cell.v)==="SCHEDULED"
+      ){
+        cell.s.font.color={rgb:"16794A"};
+        cell.s.font.bold=true;
+      }
+    }
+  }
+
+  dateColumns.forEach(column=>{
+    for(let row=1;row<=range.e.r;row++){
+      const ref=XLSX.utils.encode_cell({r:row,c:column});
+      if(ws[ref]&&ws[ref].v instanceof Date){
+        ws[ref].z="m/d/yyyy";
+      }
+    }
+  });
+
+  return ws;
+}
+function buildEcdDetailRows(detailData){
+  const headers=[
+    "Program",
+    "ECD Bucket",
+    "VIN",
+    "Order",
+    "Status",
+    "Scheduling Status",
+    "Reason",
+    "ECD",
+    "Opened Date",
+    "Customer",
+    "Branch Code",
+    "Branch",
+    "REPCLASS",
+    "Task"
+  ];
+  const records=[];
+
+  (detailData?.vrOrders||[]).forEach(order=>{
+    const scheduled=
+      order.status!=="UNASSIGNED ROS"&&
+      Boolean(parseDate(order.due));
+
+    records.push({
+      sortProgram:0,
+      sortBucket:EXPORT_BUCKET_ORDER[order.bucket]??99,
+      sortDate:parseDate(order.due)?.getTime()||0,
+      row:[
+        "Vended Repair",
+        EXPORT_BUCKET_LABELS[order.bucket]||order.bucket,
+        order.vin||"",
+        order.order,
+        order.status,
+        scheduled?"Scheduled":"Not Scheduled",
+        schedulingReason(order),
+        exportDate(order.due),
+        exportDate(order.opened),
+        order.customer,
+        order.branchCode,
+        order.branchName,
+        order.repclass,
+        order.task
+      ]
+    });
+  });
+
+  (detailData?.maintenanceItems||[]).forEach(item=>{
+    const scheduled=
+      item.status!=="UNASSIGNED ROS"&&
+      Boolean(parseDate(item.due));
+
+    records.push({
+      sortProgram:{
+        pm:1,
+        dot:2,
+        ac:3,
+        lts:4,
+        coolant:5
+      }[item.program]??9,
+      sortBucket:EXPORT_BUCKET_ORDER[item.bucket]??99,
+      sortDate:parseDate(item.due)?.getTime()||0,
+      row:[
+        EXPORT_PROGRAM_LABELS[item.program]||item.program,
+        EXPORT_BUCKET_LABELS[item.bucket]||item.bucket,
+        item.vin||"",
+        item.order,
+        item.status,
+        scheduled?"Scheduled":"Not Scheduled",
+        schedulingReason(item),
+        exportDate(item.due),
+        exportDate(item.opened),
+        item.customer,
+        item.branchCode,
+        item.branchName,
+        item.repclass,
+        item.task
+      ]
+    });
+  });
+
+  records.sort((a,b)=>
+    a.sortProgram-b.sortProgram||
+    a.sortBucket-b.sortBucket||
+    a.sortDate-b.sortDate||
+    String(a.row[2]).localeCompare(String(b.row[2]))||
+    String(a.row[3]).localeCompare(String(b.row[3]))
+  );
+
+  return [headers,...records.map(record=>record.row)];
+}
+function buildPmNotScheduledRows(detailData){
+  const headers=[
+    "VIN",
+    "Source Status",
+    "Reason",
+    "Overdue Requirement(s)",
+    "Coming-Due Requirement(s)",
+    "Matching PM Order(s)",
+    "VRO Status(es)",
+    "ECD(s)",
+    "ECD Bucket(s)",
+    "Task(s)",
+    "Source Interval Detail",
+    "Source Row Count"
+  ];
+  const source=detailData?.complianceSources?.pm;
+  if(!source)return [headers];
+
+  const itemsByVin=new Map();
+  (detailData?.maintenanceItems||[])
+    .filter(item=>item.program==="pm"&&item.vin)
+    .forEach(item=>{
+      if(!itemsByVin.has(item.vin))itemsByVin.set(item.vin,[]);
+      itemsByVin.get(item.vin).push(item);
+    });
+
+  const rows=[];
+
+  Object.entries(source.units||{}).forEach(([vin,unit])=>{
+    const overdue=unit.overdueRequirements||[];
+    const comingDue=unit.comingDueRequirements||[];
+    const dueRequirements=unit.dueRequirements||[];
+
+    if(!dueRequirements.length)return;
+
+    const items=itemsByVin.get(vin)||[];
+    const scheduledItems=items.filter(item=>
+      item.status!=="UNASSIGNED ROS"&&
+      Boolean(parseDate(item.due))
+    );
+
+    if(scheduledItems.length)return;
+
+    const reasons=[];
+    if(!items.length){
+      reasons.push("No PM VRO");
+    }else{
+      if(items.some(item=>item.status==="UNASSIGNED ROS")){
+        reasons.push("Unassigned ROs");
+      }
+      if(items.some(item=>!parseDate(item.due))){
+        reasons.push("Missing ECD");
+      }
+    }
+    if(!reasons.length)reasons.push("Not Fully Scheduled");
+
+    const sourceStatus=overdue.length
+      ?"Overdue"
+      :"Coming Soon";
+
+    const intervalDetail=(unit.rows||[])
+      .map(row=>{
+        const parts=[
+          row.meterType||"Interval",
+          !isBlank(row.interval)?`Interval ${row.interval}`:"",
+          row.dueCategory||"",
+          duePercentText(row.duePercent)
+        ].filter(Boolean);
+        return parts.join(" · ");
+      })
+      .filter(Boolean)
+      .join(" | ");
+
+    rows.push([
+      vin,
+      sourceStatus,
+      reasons.join("; "),
+      overdue.join(", "),
+      comingDue.join(", "),
+      uniqueText(items.map(item=>item.order)),
+      uniqueText(items.map(item=>item.status)),
+      uniqueText(items.map(item=>dateText(item.due))),
+      uniqueText(items.map(item=>EXPORT_BUCKET_LABELS[item.bucket]||item.bucket)),
+      uniqueText(items.map(item=>item.task)),
+      intervalDetail,
+      unit.rowCount||0
+    ]);
+  });
+
+  rows.sort((a,b)=>
+    (a[1]==="Overdue"?0:1)-(b[1]==="Overdue"?0:1)||
+    String(a[2]).localeCompare(String(b[2]))||
+    String(a[0]).localeCompare(String(b[0]))
+  );
+
+  return [headers,...rows];
+}
+function buildVrNotScheduledRows(detailData){
+  const headers=[
+    "VIN",
+    "Reason",
+    "Open Order Count",
+    "Order(s)",
+    "Status(es)",
+    "ECD(s)",
+    "ECD Bucket(s)",
+    "Opened Date(s)",
+    "Customer(s)",
+    "Branch(es)",
+    "REPCLASS(es)",
+    "Task(s)"
+  ];
+
+  const grouped=new Map();
+
+  (detailData?.vrOrders||[])
+    .filter(order=>
+      order.status==="UNASSIGNED ROS"||
+      !parseDate(order.due)
+    )
+    .forEach(order=>{
+      const key=order.vin||`NO VIN - ${order.order}`;
+      if(!grouped.has(key))grouped.set(key,[]);
+      grouped.get(key).push(order);
+    });
+
+  const rows=[];
+
+  grouped.forEach((orders,vin)=>{
+    const reasons=new Set();
+
+    orders.forEach(order=>{
+      if(!order.vin)reasons.add("Missing VIN");
+      if(order.status==="UNASSIGNED ROS")reasons.add("Unassigned ROs");
+      if(!parseDate(order.due))reasons.add("Missing ECD");
+    });
+
+    rows.push([
+      vin,
+      [...reasons].join("; "),
+      orders.length,
+      uniqueText(orders.map(order=>order.order)),
+      uniqueText(orders.map(order=>order.status)),
+      uniqueText(orders.map(order=>dateText(order.due))),
+      uniqueText(orders.map(order=>EXPORT_BUCKET_LABELS[order.bucket]||order.bucket)),
+      uniqueText(orders.map(order=>dateText(order.opened))),
+      uniqueText(orders.map(order=>order.customer)),
+      uniqueText(orders.map(order=>order.branchName)),
+      uniqueText(orders.map(order=>order.repclass)),
+      uniqueText(orders.map(order=>order.task))
+    ]);
+  });
+
+  rows.sort((a,b)=>
+    String(a[1]).localeCompare(String(b[1]))||
+    String(a[0]).localeCompare(String(b[0]))
+  );
+
+  return [headers,...rows];
+}
+
 function exportAllTables(){
   if(!dashboardData)return;
   const wb=XLSX.utils.book_new();
@@ -2833,6 +3270,40 @@ function exportAllTables(){
     wb,
     makeSheet(ersRows,[48,16,16,24],ersTypes),
     "ERS Metrics"
+  );
+
+  // Detailed ECD and scheduling reports are included in the same export.
+  const detailData=dashboardData.detailData||{};
+
+  const ecdDetailRows=buildEcdDetailRows(detailData);
+  XLSX.utils.book_append_sheet(
+    wb,
+    makeDetailSheet(
+      ecdDetailRows,
+      [20,18,20,18,20,18,24,13,13,34,13,26,18,55],
+      [7,8]
+    ),
+    "ECD Detail"
+  );
+
+  const pmNotScheduledRows=buildPmNotScheduledRows(detailData);
+  XLSX.utils.book_append_sheet(
+    wb,
+    makeDetailSheet(
+      pmNotScheduledRows,
+      [20,16,24,22,24,25,22,26,24,58,48,16]
+    ),
+    "PM Not Scheduled"
+  );
+
+  const vrNotScheduledRows=buildVrNotScheduledRows(detailData);
+  XLSX.utils.book_append_sheet(
+    wb,
+    makeDetailSheet(
+      vrNotScheduledRows,
+      [20,24,16,26,22,26,24,26,34,30,22,62]
+    ),
+    "VR Not Scheduled"
   );
 
   XLSX.writeFile(
