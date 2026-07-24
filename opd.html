@@ -1,0 +1,2185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Garda Operational Performance | OSC+ Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <style>
+    :root {
+      --sidebar:#3a3b40;
+      --sidebar-hover:#4a4b50;
+      --gold:#ffc600;
+      --gold-hover:#e5b200;
+      --page:#f4f6f9;
+      --panel:#ffffff;
+      --border:#d8dde3;
+      --text:#2f3338;
+      --muted:#6b7280;
+      --blue:#1f4e78;
+      --blue-dark:#173a59;
+      --section:#e8edf2;
+      --total:#d9e2ec;
+      --green:#16794a;
+      --red:#b42318;
+    }
+
+    * { box-sizing:border-box; }
+    html, body { height:100%; margin:0; }
+
+    body {
+      display:flex;
+      overflow:hidden;
+      background:var(--page);
+      color:var(--text);
+      font-family:"Raleway","Segoe UI",Arial,sans-serif;
+    }
+
+    button, input, select { font:inherit; }
+
+    #login-overlay {
+      position:fixed;
+      inset:0;
+      z-index:10000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:var(--sidebar);
+    }
+
+    .login-box {
+      width:350px;
+      padding:38px;
+      background:#fff;
+      border-radius:8px;
+      box-shadow:0 14px 35px rgba(0,0,0,.35);
+      text-align:center;
+    }
+
+    .login-box h2 {
+      margin:15px 0 20px;
+      font-size:24px;
+      font-weight:900;
+    }
+
+    .login-box input {
+      width:100%;
+      height:44px;
+      padding:0 12px;
+      margin-bottom:12px;
+      border:1px solid #cbd2da;
+      border-radius:5px;
+      font-size:15px;
+    }
+
+    .login-box button {
+      width:100%;
+      height:42px;
+      border:none;
+      border-radius:5px;
+      background:var(--gold);
+      color:#252525;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .login-error {
+      display:none;
+      margin-bottom:10px;
+      color:var(--red);
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .sidebar {
+      width:280px;
+      flex:0 0 280px;
+      display:flex;
+      flex-direction:column;
+      background:var(--sidebar);
+      color:#fff;
+      box-shadow:2px 0 8px rgba(0,0,0,.12);
+    }
+
+    .brand {
+      min-height:100px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      border-bottom:1px solid #292a2e;
+    }
+
+    .brand-copy {
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      justify-content:center;
+      line-height:1;
+    }
+
+    .brand-name {
+      font-size:38px;
+      font-weight:900;
+      letter-spacing:1.2px;
+    }
+
+    .brand-plus { color:var(--gold); }
+
+    .brand-subtitle {
+      margin-top:7px;
+      color:var(--gold);
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:2.2px;
+      text-transform:uppercase;
+    }
+
+    .wheel {
+      width:44px;
+      height:44px;
+      border:7px solid var(--gold);
+      border-radius:50%;
+      position:relative;
+      display:inline-block;
+    }
+
+    .wheel::before, .wheel::after {
+      content:"";
+      position:absolute;
+      left:50%;
+      top:50%;
+      background:var(--gold);
+      transform:translate(-50%,-50%);
+    }
+
+    .wheel::before { width:31px; height:6px; }
+    .wheel::after { width:6px; height:31px; }
+
+    .sidebar a.nav-item { display:block; text-decoration:none; }
+
+    .nav-item {
+      padding:16px 20px;
+      border-bottom:1px solid #4b4c51;
+      border-left:4px solid transparent;
+      color:#fff;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      transition:.15s;
+    }
+
+    .nav-item:hover {
+      background:var(--sidebar-hover);
+      color:var(--gold);
+    }
+
+    .nav-item.active {
+      border-left-color:var(--gold);
+      background:var(--sidebar-hover);
+      color:var(--gold);
+    }
+
+    .sidebar-truck {
+      margin-top:auto;
+      padding:24px 20px 22px;
+      border-top:1px solid #4b4c51;
+      background:#2a2b30;
+      text-align:center;
+    }
+
+    .app {
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+
+    .topbar {
+      min-height:86px;
+      flex:0 0 86px;
+      padding:16px 26px;
+      background:#fff;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:24px;
+      box-shadow:0 2px 5px rgba(0,0,0,.04);
+    }
+
+    .title h1 {
+      margin:0;
+      font-size:27px;
+      font-weight:850;
+    }
+
+    .filter {
+      min-width:300px;
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+    }
+
+    .filter label {
+      color:var(--muted);
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.6px;
+      text-transform:uppercase;
+    }
+
+    .filter select {
+      height:40px;
+      padding:0 12px;
+      border:1px solid #cbd2da;
+      border-radius:5px;
+      background:#fff;
+      color:var(--text);
+      font-size:14px;
+      font-weight:700;
+      outline:none;
+    }
+
+    .view {
+      display:none;
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:22px 26px 32px;
+    }
+
+    .view.active { display:block; }
+
+    .error-box {
+      display:none;
+      margin-bottom:12px;
+      padding:11px 13px;
+      border:1px solid #ef9a9a;
+      border-left:4px solid var(--red);
+      border-radius:6px;
+      background:#fff1f1;
+      color:#7f1d1d;
+      font-size:12px;
+      font-weight:750;
+      line-height:1.45;
+    }
+
+    .report-panel, .config-panel {
+      overflow:hidden;
+      border:1px solid var(--border);
+      border-top:4px solid var(--gold);
+      border-radius:8px;
+      background:var(--panel);
+      box-shadow:0 2px 8px rgba(20,30,45,.07);
+    }
+
+    .panel-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:16px;
+      padding:14px 16px;
+      border-bottom:1px solid var(--border);
+    }
+
+    .panel-head h2 {
+      margin:0;
+      font-size:17px;
+      font-weight:850;
+    }
+
+    .refresh {
+      color:var(--muted);
+      font-size:11px;
+      font-weight:800;
+      text-align:right;
+    }
+
+    .loading {
+      padding:65px 20px;
+      text-align:center;
+      color:var(--muted);
+      font-size:14px;
+      font-weight:800;
+    }
+
+    .spinner {
+      width:34px;
+      height:34px;
+      margin:0 auto 13px;
+      border:4px solid #e2e8f0;
+      border-top-color:var(--gold);
+      border-radius:50%;
+      animation:spin .8s linear infinite;
+    }
+
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    .table-wrap {
+      overflow:auto;
+      max-height:calc(100vh - 190px);
+    }
+
+    table {
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      table-layout:fixed;
+      font-size:12px;
+    }
+
+    .report-table { min-width:1450px; }
+    .config-table { min-width:1450px; }
+
+    thead th {
+      position:sticky;
+      top:0;
+      z-index:4;
+      padding:9px 7px;
+      border-right:1px solid rgba(255,255,255,.22);
+      border-bottom:2px solid var(--blue-dark);
+      background:var(--blue);
+      color:#fff;
+      text-align:center;
+      vertical-align:middle;
+      font-size:9.5px;
+      font-weight:900;
+      line-height:1.2;
+      text-transform:uppercase;
+      white-space:normal;
+    }
+
+    .report-table th:first-child,
+    .report-table td:first-child {
+      position:sticky;
+      left:0;
+      z-index:3;
+    }
+
+    .report-table thead th:first-child { z-index:6; }
+
+    tbody td {
+      padding:8px 7px;
+      border-right:1px solid var(--border);
+      border-bottom:1px solid var(--border);
+      background:#fff;
+      vertical-align:middle;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .report-table tbody td:first-child {
+      background:#fff;
+      text-align:left;
+      font-weight:800;
+    }
+
+    tbody tr.data-row:hover td,
+    tbody tr.data-row:hover td:first-child {
+      background:#fffbea;
+    }
+
+    .section-row td {
+      padding:8px 10px;
+      border-top:2px solid #b9c4cf;
+      border-bottom:2px solid #b9c4cf;
+      background:var(--section)!important;
+      color:#20262d;
+      text-align:left!important;
+      font-size:12px;
+      font-weight:900;
+    }
+
+    .total-row td {
+      border-top:2px solid #9ba8b5;
+      background:var(--total)!important;
+      font-weight:900;
+    }
+
+    .grand-total td,
+    .grand-total td:first-child {
+      border-color:#3b4651;
+      background:#26323f!important;
+      color:#fff;
+      font-weight:900;
+    }
+
+    .segment-summary-row td {
+      background:#e8edf2!important;
+      color:#20262d;
+      font-weight:900;
+      border-bottom:1px solid #b9c4cf;
+    }
+
+    .report-spacer-row td {
+      height:16px;
+      padding:0!important;
+      background:#f4f6f9!important;
+      border:none!important;
+    }
+
+    .report-detail-row td:nth-child(1) {
+      text-align:left;
+      font-weight:800;
+    }
+
+    .num { text-align:right!important; }
+
+    .config-toolbar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      flex-wrap:wrap;
+      padding:14px 16px;
+      border-bottom:1px solid var(--border);
+      background:#f8fafc;
+    }
+
+    .config-actions {
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    .btn {
+      border:none;
+      border-radius:5px;
+      padding:9px 13px;
+      font-size:11px;
+      font-weight:900;
+      cursor:pointer;
+      transition:.15s;
+    }
+
+    .btn:hover { transform:translateY(-1px); }
+    .btn:disabled { cursor:not-allowed; opacity:.45; transform:none; }
+
+    .btn-gold { background:var(--gold); color:#222; }
+    .btn-blue { background:var(--blue); color:#fff; }
+    .btn-dark { background:#334155; color:#fff; }
+    .btn-red { background:#b42318; color:#fff; }
+    .btn-light { background:#e2e8f0; color:#334155; border:1px solid #cbd5e1; }
+
+    .unlock-badge {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      font-size:10px;
+      font-weight:900;
+    }
+
+    .unlock-badge.locked {
+      background:#fee2e2;
+      color:#991b1b;
+      border:1px solid #fecaca;
+    }
+
+    .unlock-badge.unlocked {
+      background:#dcfce7;
+      color:#166534;
+      border:1px solid #86efac;
+    }
+
+    .config-customer-link {
+      border:none;
+      background:transparent;
+      color:#0b5cab;
+      font-weight:900;
+      cursor:pointer;
+      padding:0;
+      text-align:left;
+    }
+
+    .config-customer-link:hover { text-decoration:underline; }
+
+    .service-pill {
+      display:inline-flex;
+      padding:4px 8px;
+      border-radius:999px;
+      background:#e8eef5;
+      border:1px solid #cbd5e1;
+      color:#334155;
+      font-size:10px;
+      font-weight:900;
+    }
+
+    .empty-state {
+      padding:45px 20px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .modal-overlay {
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:12000;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      background:rgba(15,23,42,.72);
+    }
+
+    .modal-overlay.open { display:flex; }
+
+    .modal-box {
+      width:540px;
+      max-width:96vw;
+      max-height:94vh;
+      overflow:auto;
+      border-radius:9px;
+      border-top:5px solid var(--gold);
+      background:#fff;
+      box-shadow:0 18px 45px rgba(0,0,0,.3);
+    }
+
+    .editor-box { width:96vw; }
+
+    .modal-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      padding:15px 18px;
+      border-bottom:1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      margin:0;
+      font-size:18px;
+      font-weight:900;
+    }
+
+    .modal-close {
+      border:none;
+      background:transparent;
+      color:#64748b;
+      font-size:24px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .modal-body { padding:18px; }
+
+    .modal-footer {
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      padding:13px 18px;
+      border-top:1px solid var(--border);
+      background:#f8fafc;
+    }
+
+    .field {
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+    }
+
+    .field label {
+      color:#64748b;
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+    }
+
+    .field input, .field select {
+      height:39px;
+      padding:0 10px;
+      border:1px solid #cbd5e1;
+      border-radius:5px;
+      background:#fff;
+      color:#1f2937;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .annualization-controls {
+      display:flex;
+      align-items:end;
+      gap:18px;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+      padding:12px;
+      border:1px solid #dce2e8;
+      border-radius:6px;
+      background:#f8fafc;
+    }
+
+    .existing-check {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-height:39px;
+      color:#334155;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .existing-check input {
+      width:17px;
+      height:17px;
+      accent-color:var(--gold-hover);
+    }
+
+    .service-editor-wrap {
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:7px;
+    }
+
+    .service-editor {
+      width:100%;
+      min-width:1450px;
+      border-collapse:collapse;
+    }
+
+    .service-editor th {
+      position:static;
+      background:#111827;
+      border:1px solid #374151;
+      font-size:9px;
+    }
+
+    .service-editor td {
+      border:1px solid var(--border);
+      padding:6px;
+      overflow:visible;
+    }
+
+    .service-editor input[type="number"],
+    .service-editor input[type="text"],
+    .service-editor select {
+      width:100%;
+      min-width:88px;
+      height:34px;
+      padding:0 7px;
+      border:1px solid #cbd5e1;
+      border-radius:4px;
+      font-size:11px;
+    }
+
+    .service-editor input[type="number"] { text-align:right; }
+
+    .service-editor input[type="checkbox"] {
+      width:17px;
+      height:17px;
+      accent-color:var(--gold-hover);
+    }
+
+    .service-name {
+      min-width:150px;
+      text-align:left!important;
+      font-weight:900;
+    }
+
+    .service-row.disabled td {
+      background:#f1f5f9;
+      color:#94a3b8;
+    }
+
+    .service-row.disabled input:not([type="checkbox"]) {
+      background:#e2e8f0;
+      color:#94a3b8;
+    }
+
+    .form-error {
+      display:none;
+      margin-top:12px;
+      padding:9px 11px;
+      border:1px solid #fecaca;
+      border-radius:5px;
+      background:#fee2e2;
+      color:#991b1b;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .password-note {
+      margin-bottom:12px;
+      color:#64748b;
+      font-size:12px;
+      font-weight:700;
+      line-height:1.45;
+    }
+
+    @media (max-width:900px) {
+      .sidebar { width:210px; flex-basis:210px; }
+      .brand-name { font-size:30px; }
+      .topbar {
+        height:auto;
+        flex-basis:auto;
+        align-items:flex-start;
+        flex-direction:column;
+      }
+      .filter { width:100%; min-width:0; }
+      .view { padding:16px; }
+    }
+  
+
+    /* Garda Operational Performance additions */
+    .opd-top-controls {
+      display:flex;
+      align-items:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .opd-date-filter {
+      min-width:190px;
+      width:210px;
+    }
+
+    .opd-date-filter input {
+      height:40px;
+      padding:0 12px;
+      border:1px solid #cbd2da;
+      border-radius:5px;
+      background:#fff;
+      color:var(--text);
+      font-size:14px;
+      font-weight:700;
+      outline:none;
+    }
+
+    .opd-view {
+      display:block;
+      padding:22px 26px 32px;
+    }
+
+    .opd-panel-body {
+      padding:16px;
+      background:#f8fafc;
+    }
+
+    .opd-status-strip {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:14px;
+      align-items:center;
+      margin-bottom:16px;
+      padding:11px 13px;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:#fff;
+    }
+
+    .opd-status-main {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+    }
+
+    .status-dot {
+      width:10px;
+      height:10px;
+      flex:0 0 auto;
+      border-radius:50%;
+      background:#94a3b8;
+      box-shadow:0 0 0 4px rgba(148,163,184,.14);
+    }
+
+    .status-dot.loading {
+      background:#d89200;
+      box-shadow:0 0 0 4px rgba(216,146,0,.14);
+      animation:opdPulse 1.2s infinite;
+    }
+
+    .status-dot.ok {
+      background:var(--green);
+      box-shadow:0 0 0 4px rgba(22,121,74,.13);
+    }
+
+    .status-dot.error {
+      background:var(--red);
+      box-shadow:0 0 0 4px rgba(180,35,24,.13);
+    }
+
+    @keyframes opdPulse { 50% { opacity:.45; } }
+
+    .opd-status-text {
+      min-width:0;
+    }
+
+    .opd-status-text strong {
+      display:block;
+      color:#26323f;
+      font-size:12px;
+    }
+
+    .opd-status-text span {
+      display:block;
+      margin-top:2px;
+      overflow:hidden;
+      color:var(--muted);
+      font-size:11px;
+      white-space:nowrap;
+      text-overflow:ellipsis;
+    }
+
+    .opd-status-meta {
+      display:flex;
+      justify-content:flex-end;
+      gap:7px;
+      flex-wrap:wrap;
+    }
+
+    .opd-pill {
+      display:inline-flex;
+      align-items:center;
+      padding:5px 8px;
+      border:1px solid #d9e0e6;
+      border-radius:999px;
+      background:#eef2f5;
+      color:#53606b;
+      font-size:10px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+
+    .opd-pill.good {
+      border-color:#bce2cc;
+      background:#edf8f2;
+      color:#237149;
+    }
+
+    .opd-pill.warn {
+      border-color:#edd58a;
+      background:#fff8e4;
+      color:#8b6600;
+    }
+
+    .source-warning {
+      display:none;
+      margin-bottom:14px;
+      padding:10px 12px;
+      border:1px solid #ebca75;
+      border-left:4px solid var(--gold-hover);
+      border-radius:6px;
+      background:#fff8e6;
+      color:#795c0d;
+      font-size:11px;
+      font-weight:750;
+      line-height:1.45;
+    }
+
+    .opd-grid {
+      display:grid;
+      grid-template-columns:minmax(0,1.08fr) minmax(350px,.72fr);
+      gap:18px;
+      align-items:start;
+    }
+
+    .opd-full { grid-column:1/-1; }
+
+    .opd-card {
+      overflow:hidden;
+      border:1px solid var(--border);
+      border-radius:7px;
+      background:#fff;
+      box-shadow:0 1px 3px rgba(15,23,42,.05);
+    }
+
+    .opd-table-wrap {
+      overflow:auto;
+    }
+
+    .opd-table {
+      width:100%;
+      min-width:0;
+      border-collapse:separate;
+      border-spacing:0;
+      table-layout:fixed;
+      font-size:12px;
+    }
+
+    .opd-table thead th {
+      position:static;
+      z-index:auto;
+      padding:8px 9px;
+      border-right:1px solid #b9c4cf;
+      border-bottom:2px solid #9ba8b5;
+      background:#d9dde1;
+      color:#111;
+      text-align:left!important;
+      vertical-align:middle;
+      font-size:10px;
+      font-weight:900;
+      line-height:1.2;
+      text-transform:none;
+      white-space:nowrap;
+      cursor:default;
+    }
+
+    .opd-table thead th:hover { background:#d9dde1; }
+    .opd-table thead th:last-child { border-right:0; }
+
+    .opd-table tbody td {
+      height:32px;
+      padding:7px 9px;
+      border-right:1px solid var(--border);
+      border-bottom:1px solid var(--border);
+      background:#fff;
+      color:#20262d;
+      vertical-align:middle;
+      text-align:left;
+      font-size:12px;
+      font-weight:500;
+      white-space:normal;
+      overflow:visible;
+      text-overflow:clip;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .opd-table tbody td:last-child { border-right:0; }
+    .opd-table tbody tr:last-child td { border-bottom:0; }
+    .opd-table tbody tr:nth-child(even) td { background:#f9fafb; }
+    .opd-table tbody tr:hover td { background:#fffbea; }
+
+    .opd-table td.num {
+      text-align:right!important;
+      white-space:nowrap;
+    }
+
+    .opd-table td.label {
+      color:#0070c0;
+      font-weight:800;
+    }
+
+    .opd-table td.sub-label {
+      padding-left:26px;
+      color:#20262d;
+      font-style:italic;
+      font-weight:750;
+    }
+
+    .vendor-section-row td {
+      background:var(--section)!important;
+      color:#20262d!important;
+      text-align:left!important;
+      font-weight:900!important;
+    }
+
+    .vendor-section-row:hover td { background:var(--section)!important; }
+    .group-start td { border-top:2px solid #b9c4cf; }
+
+    .cell-note {
+      display:block;
+      margin-top:2px;
+      color:#8a949d;
+      font-size:9px;
+      font-weight:650;
+    }
+
+    .empty { color:#8a949d!important; }
+    .delta-up { color:#16794a!important; }
+    .delta-down { color:#b42318!important; }
+    .delta-neutral { color:#65717c!important; }
+
+    .opd-table .table-title-col { width:49%; }
+    .opd-card.vr-ecd .table-title-col { width:72%; }
+    .opd-card.maintenance .table-title-col { width:32%; }
+    .opd-card.vendor .table-title-col { width:50%; }
+    .opd-card.ers .table-title-col { width:50%; }
+    .opd-table .value-col { width:17%; }
+    .opd-card.maintenance .value-col { width:12.6%; }
+    .opd-card.maintenance .wide-col { width:18.8%; }
+
+    .opd-footer {
+      margin-top:16px;
+      color:var(--muted);
+      text-align:center;
+      font-size:10px;
+      line-height:1.55;
+    }
+
+    .opd-footer strong { color:#43515d; }
+
+    @media (max-width:1050px) {
+      .opd-grid { grid-template-columns:1fr; }
+      .opd-full { grid-column:auto; }
+    }
+
+    @media (max-width:900px) {
+      .opd-top-controls { width:100%; }
+      .opd-date-filter { width:100%; }
+      .opd-date-filter input { width:100%; }
+      .opd-view { padding:16px; }
+      .opd-status-strip { grid-template-columns:1fr; }
+      .opd-status-meta { justify-content:flex-start; }
+    }
+</style>
+</head>
+<body>
+  <div id="login-overlay">
+    <form class="login-box" id="login-form">
+      <span class="wheel" aria-hidden="true"></span>
+      <h2>OSC+ Login</h2>
+      <div id="login-error" class="login-error">Incorrect password</div>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="Enter Password">
+      <button type="submit">ENTER</button>
+    </form>
+  </div>
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="wheel" aria-hidden="true"></span>
+      <div class="brand-copy">
+        <span class="brand-name">OSC<span class="brand-plus">+</span></span>
+        <span class="brand-subtitle">Analytics</span>
+      </div>
+    </div>
+
+    <a class="nav-item" href="analytics.html">OSC+ Analytics</a>
+    <a class="nav-item active" href="opd.html">Garda Operational Performance</a>
+
+    <div class="sidebar-truck">
+      <svg width="150" height="76" viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="57" x2="120" y2="57" stroke="#4a4b50" stroke-width="2" stroke-dasharray="10 5"/>
+        <rect x="5" y="15" width="70" height="35" fill="var(--gold)" rx="3"/>
+        <path d="M78 25 H 92 L 105 35 V 50 H 78 Z" fill="var(--gold)"/>
+        <path d="M82 28 H 90 L 98 35 H 82 Z" fill="#2a2b30"/>
+        <rect x="75" y="42" width="3" height="4" fill="#888"/>
+        <line x1="15" y1="25" x2="65" y2="25" stroke="#c49a1d" stroke-width="1.5"/>
+        <circle cx="25" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="25" cy="50" r="2" fill="#888"/>
+        <circle cx="60" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="60" cy="50" r="2" fill="#888"/>
+        <circle cx="91" cy="50" r="7" fill="#111" stroke="#888" stroke-width="1.5"/>
+        <circle cx="91" cy="50" r="2" fill="#888"/>
+      </svg>
+    </div>
+  </aside>
+
+  <main class="app">
+    <header class="topbar">
+      <div class="title">
+        <h1>Garda Operational Performance</h1>
+      </div>
+
+      <div class="opd-top-controls">
+        <div class="filter opd-date-filter">
+          <label for="report-date">Report Date</label>
+          <input type="date" id="report-date" title="ECD calculation date">
+        </div>
+        <button class="btn btn-gold" id="export-btn" disabled>Export All Tables</button>
+      </div>
+    </header>
+
+    <section class="view active opd-view">
+      <div id="source-warning" class="source-warning"></div>
+
+      <div class="report-panel">
+        <div class="panel-head">
+          <h2>Garda Operational Performance</h2>
+          <span id="updated-pill" class="refresh">Connecting to Firebase...</span>
+        </div>
+
+        <div class="opd-panel-body">
+          <div class="opd-status-strip">
+            <div class="opd-status-main">
+              <div class="status-dot loading" id="status-dot"></div>
+              <div class="opd-status-text">
+                <strong id="status-title">Waiting for Firebase authentication</strong>
+                <span id="status-detail">The dashboard loads automatically after sign-in.</span>
+              </div>
+            </div>
+            <div class="opd-status-meta">
+              <span class="opd-pill" id="branch-pill">67 approved branches</span>
+              <span class="opd-pill" id="order-pill">Open ROs —</span>
+            </div>
+          </div>
+
+          <div class="opd-grid">
+            <section class="opd-card vr-main">
+              <div class="opd-table-wrap">
+                <table class="opd-table" id="vended-repair-table">
+                  <thead><tr><th class="table-title-col">Vended Repair</th><th class="value-col">Prior Day</th><th class="value-col">Current Day</th><th class="value-col">Delta</th></tr></thead>
+                  <tbody id="vended-repair-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="opd-card vr-ecd">
+              <div class="opd-table-wrap">
+                <table class="opd-table" id="vr-ecd-table">
+                  <thead><tr><th class="table-title-col">VR ECD Bucket</th><th>Current State</th></tr></thead>
+                  <tbody id="vr-ecd-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="opd-card maintenance opd-full">
+              <div class="opd-table-wrap">
+                <table class="opd-table" id="maintenance-table">
+                  <thead><tr><th class="table-title-col">Vended Maintenance</th><th class="value-col">Prior Day</th><th class="value-col">Current Day</th><th class="value-col">Delta</th><th class="wide-col">Achievable Compliance</th><th class="wide-col">Scheduling Gap</th></tr></thead>
+                  <tbody id="maintenance-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="opd-card vendor">
+              <div class="opd-table-wrap">
+                <table class="opd-table" id="vendor-table">
+                  <thead><tr><th class="table-title-col">Vendor Coverage</th><th class="value-col">Past State</th><th class="value-col">Present State</th><th class="value-col">Delta</th></tr></thead>
+                  <tbody id="vendor-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="opd-card ers">
+              <div class="opd-table-wrap">
+                <table class="opd-table" id="ers-table">
+                  <thead><tr><th class="table-title-col">ERS Metrics</th><th class="value-col">Prior Day</th><th class="value-col">Current Day</th><th class="value-col">Delta</th></tr></thead>
+                  <tbody id="ers-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="opd-footer"><strong>Workbook-derived:</strong> Garda usefulness and unit totals use the 67 matched branches on Useful % / Useful % DOD; # Units is the sum of TOTAL - TOTAL UNITS. Open-order ECDs use VRO Export Column L, and A/C ECDs include each unique open Order whose Column F Task contains GARDA AC CHECK. Compliance comes from GARDA FLASH Columns A–D; Column D is interpreted as percentage points and displayed in basis points. ERS comes from F–I, and Vendor Coverage from K–N. Achievable Compliance and Scheduling Gap remain optional Realtime Database fields.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+const FIREBASE_CONFIG={apiKey:"AIzaSyCr3VAldI-pPCb7APx3rJAEZvf_nl0iz1g",authDomain:"workflow-dashboard-e6134.firebaseapp.com",databaseURL:"https://workflow-dashboard-e6134-default-rtdb.firebaseio.com",projectId:"workflow-dashboard-e6134",storageBucket:"workflow-dashboard-e6134.firebasestorage.app",messagingSenderId:"641710248116",appId:"1:641710248116:web:1546701879d573041447e1"};
+const MASTER_EMAIL="maintenance@ameritfleet.com";
+const WORKBOOK_PATH="master_workFLOWtest.xlsx";
+const SNAPSHOT_ROOT="operationalPerformanceTables/gardaSnapshots";
+const SUPPLEMENTAL_ROOT="operationalPerformanceTables/manualMetrics";
+const OPEN_STATUSES=new Set(["UNASSIGNED ROS","ESTIMATES","PENDING ESTIMATES","WORK IN PROGRESS"]);
+const DEFAULT_VENDOR_PATTERNS=["DEFAULT BLANKET VENDOR","SYSTEM USE ONLY","DO NOT BILL","NO VENDOR"];
+const APPROVED_BRANCHES=[
+["Birmingham, AL","260-22"],["Charleston, SC","250-92"],["Hampton-Chespeake, VA","140-31"],["Knoxville, TN","270-10"],["Memphis, TN","270-32"],["Myrtle Beach, SC","250-97"],["Nashville, TN","270-08"],["Richmond, VA","140-89"],["Roanoke, VA","140-24"],["Kansas City, KS","130-63"],["Lexington, KY","270-65"],["Salina, KS","130-62"],["St. Louis, MO","130-69"],["Wichita, KS","130-65"],["Cincinnati, OH","190-67"],["Columbus, OH","190-64"],["Dayton, OH","190-65"],["Grand Rapids, MI","190-60"],["Bloomington, IL","190-24"],["Chippewa Falls, WI","190-53"],["Davenport, IA","190-45"],["Duluth, MN","190-58"],["Green Bay, WI","190-55"],["Madison, WI","190-56"],["Dover, DE","140-92"],["Johnstown, PA","140-82"],["Wilkes Barre, PA","140-95"],["Burlington, VT","144-21"],["Rochester, NY","280-55"],["Schenectady, NY","140-27"],["West Hempstead, NY","140-28"],["Austin, TX","130-75"],["Corpus Christi, TX","130-72"],["El Paso, TX","130-20"],["Laredo, TX","130-76"],["Little Rock, AR","260-07"],["Lubbock, TX","130-11"],["McAllen, TX","130-74"],["Shreveport, LA","260-03"],["Jackson, MS","260-23"],["Jacksonville, FL","260-19"],["Lafayette, LA","260-01"],["Mobile, AL","260-31"],["New Orleans, LA","260-02"],["Red Bluff, CA","120-15"],["Sparks, NV","120-61"],["Bend, OR","230-60"],["Boise, ID","230-39"],["Helena, MT","230-87"],["Lewiston, ID","230-80"],["Medford, OR","230-59"],["Missoula, MT","230-91"],["Mt. Vernon, WA","230-53"],["Renton, WA","230-51"],["Roseburg, OR","230-58"],["Spokane, WA","230-50"],["Tacoma, WA","230-52"],["Wenatchee, WA","230-49"],["Yakima, WA","230-47"],["Santa Maria, CA","120-23"],["Albuquerque, NM","130-88"],["Casper, WY","230-95"],["Cheyenne, WY","230-96"],["Colorado Springs, CO","230-16"],["Flagstaff, AZ","120-27"],["Grand Junction, CO","230-34"],["Tucson, AZ","120-82"]
+];
+const BRANCH_BY_CODE=new Map(APPROVED_BRANCHES.map(([name,code])=>[code.replace(/\D/g,""),{name,code}]));
+const APPROVED_CODES=new Set(BRANCH_BY_CODE.keys());
+const PROGRAMS=[
+ {key:"pm",label:"PM Compliance"},
+ {key:"dot",label:"DOT Compliance"},
+ {key:"lts",label:"LTS PM Compliance"},
+ {key:"ac",label:"A/C Compliance"}
+];
+const ECD_ROWS=[
+ {key:"repairOrders",label:"# Repair Orders"},
+ {key:"pastDue",label:"Past Due ECDs"},
+ {key:"missing",label:"Missing ECDs"},
+ {key:"due03",label:"Due 0–3 Days"},
+ {key:"due47",label:"Due 4–7 Days"},
+ {key:"due814",label:"Due 8–14 Days"},
+ {key:"due14",label:"Due 14+ Days"}
+];
+const MAINTENANCE_ECD_ROWS=ECD_ROWS.filter(row=>row.key!=="repairOrders");
+const $=s=>document.querySelector(s);
+let db=null;
+let lastWorkbookBuffer=null;
+let lastParsed=null;
+let dashboardData=null;
+let supplementalData={};
+let priorSnapshot=null;
+let supplementalListenerRef=null;
+
+function localDateKey(date=new Date()){
+  const d=new Date(date);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function dateFromKey(key){const [y,m,d]=String(key||"").split("-").map(Number);return new Date(y,m-1,d);}
+function previousDateKey(key){const d=dateFromKey(key);d.setDate(d.getDate()-1);return localDateKey(d);}
+function selectedReportDate(){return dateFromKey($("#report-date").value||localDateKey());}
+function clean(value){return String(value??"").trim();}
+function upper(value){return clean(value).replace(/\s+/g," ").toUpperCase();}
+function isBlank(value){return value===null||value===undefined||clean(value)===""||Number.isNaN(Number(value));}
+function toNumber(value){if(value===null||value===undefined||value==="")return 0;const n=Number(value);return Number.isFinite(n)?n:0;}
+function extractBranchCode(value){const matches=[...clean(value).matchAll(/(?:^|\D)(\d{3})\s*-?\s*(\d{2})(?!\d)/g)];if(!matches.length)return "";const m=matches[matches.length-1];return `${m[1]}${m[2]}`;}
+function validVendor(value){const v=upper(value);return !!v&&!DEFAULT_VENDOR_PATTERNS.some(p=>v.includes(p));}
+function parseDate(value){
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return new Date(value.getFullYear(),value.getMonth(),value.getDate());
+  if(typeof value==="number"&&Number.isFinite(value)){
+    const utc=new Date(Date.UTC(1899,11,30)+Math.round(value*86400000));
+    return new Date(utc.getUTCFullYear(),utc.getUTCMonth(),utc.getUTCDate());
+  }
+  const s=clean(value);if(!s||/^1\/1\/1970(?:\s|$)/.test(s)||/^1970-01-01/.test(s))return null;
+  const d=new Date(s);if(Number.isNaN(d.getTime())||d.getFullYear()<=1970)return null;
+  return new Date(d.getFullYear(),d.getMonth(),d.getDate());
+}
+function ecdBucket(value,reportDate){const due=parseDate(value);if(!due)return "missing";const base=new Date(reportDate);base.setHours(0,0,0,0);due.setHours(0,0,0,0);const diff=Math.round((due-base)/86400000);if(diff<0)return "pastDue";if(diff<=3)return "due03";if(diff<=7)return "due47";if(diff<=14)return "due814";return "due14";}
+function emptyEcd(){return {repairOrders:0,pastDue:0,missing:0,due03:0,due47:0,due814:0,due14:0};}
+function pct(value){return isBlank(value)?"—":`${(Number(value)*100).toFixed(1)}%`;}
+function num(value){return isBlank(value)?"—":Number(value).toLocaleString(undefined,{maximumFractionDigits:1});}
+function timeValue(value){if(isBlank(value))return "—";const minutes=Math.round(Number(value));const h=Math.floor(minutes/60),m=minutes%60;return h?`${h}h ${m}m`:`${m}m`;}
+function formatValue(value,type="number"){return type==="percent"?pct(value):type==="time"?timeValue(value):num(value);}
+function deltaObject(prior,current){return {prior,current};}
+function deltaText(prior,current,type="number"){
+  if(isBlank(prior)||isBlank(current))return "—";
+  const d=Number(current)-Number(prior);
+  if(type==="percent"){
+    const bps=Math.round(d*10000);
+    const sign=bps>0?"+":"";
+    return `${sign}${bps.toLocaleString()} bps`;
+  }
+  if(type==="time"){
+    if(d===0)return "0m";
+    return `${timeValue(Math.abs(d))}${d<0?" shorter":" longer"}`;
+  }
+  const sign=d>0?"+":"";
+  return `${sign}${Number(d).toLocaleString(undefined,{maximumFractionDigits:1})}`;
+}
+function deltaClass(prior,current,type="number"){
+  if(isBlank(prior)||isBlank(current)||Number(prior)===Number(current))return "delta-neutral";
+  const d=Number(current)-Number(prior);
+  if(type==="time")return d<0?"delta-up":"delta-down";
+  return d>0?"delta-up":"delta-down";
+}
+function cell(value,type="number",strong=false){return `<td class="num ${isBlank(value)?"empty":""}">${strong?"<strong>":""}${formatValue(value,type)}${strong?"</strong>":""}</td>`;}
+function deltaCell(prior,current,type="number"){return `<td class="num ${deltaClass(prior,current,type)}"><strong>${deltaText(prior,current,type)}</strong></td>`;}
+function setStatus(kind,title,detail){const dot=$("#status-dot");dot.className=`status-dot ${kind||""}`;$("#status-title").textContent=title;$("#status-detail").textContent=detail||"";}
+function showWarning(messages){const el=$("#source-warning");const items=(messages||[]).filter(Boolean);if(!items.length){el.style.display="none";el.innerHTML="";return;}el.style.display="block";el.innerHTML=items.map(m=>`<div>• ${escapeHtml(m)}</div>`).join("");}
+function escapeHtml(v){return clean(v).replace(/[&<>'"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));}
+
+function sheetAoa(workbook,predicate){const name=workbook.SheetNames.find(n=>predicate(n.toLowerCase()));if(!name)return {name:"",aoa:[]};return {name,aoa:XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:"",raw:true})};}
+function validateHeader(aoa,checks,sheetName,warnings){const header=aoa[0]||[];checks.forEach(([idx,expected])=>{if(!upper(header[idx]).includes(expected)){warnings.push(`${sheetName}: expected ${expected} in column ${XLSX.utils.encode_col(idx)}, found “${clean(header[idx])||"blank"}”. Fallback column positions were still used.`);}});}
+function buildRepclassMap(aoa){const map=new Map();for(let i=1;i<aoa.length;i++){const rep=upper(aoa[i]?.[0]);const service=upper(aoa[i]?.[1]);if(rep&&service)map.set(rep,service);}return map;}
+function mergeOrder(existing,incoming){
+  if(!existing)return {...incoming,vendors:new Set(incoming.vendor&&validVendor(incoming.vendor)?[incoming.vendor]:[])};
+  if(incoming.vendor&&validVendor(incoming.vendor))existing.vendors.add(incoming.vendor);
+  if(!parseDate(existing.due)&&parseDate(incoming.due))existing.due=incoming.due;
+  if(!existing.task&&incoming.task)existing.task=incoming.task;
+  existing.acCheck=Boolean(existing.acCheck||incoming.acCheck);
+  return existing;
+}
+function parseVroRows(aoa,repclassMap,reportDate,warnings){
+  const orders=new Map();let eligibleRows=0,unmapped=0,missingOrder=0;
+  for(let i=1;i<aoa.length;i++){
+    const row=aoa[i]||[];const customer=clean(row[0]);if(!/\bGARDA\b/i.test(customer))continue;
+    const branchCode=extractBranchCode(customer);if(!APPROVED_CODES.has(branchCode))continue;
+    const status=upper(row[14]);if(!OPEN_STATUSES.has(status))continue;
+    eligibleRows++;
+    const order=clean(row[7]);if(!order){missingOrder++;continue;}
+    const repclass=upper(row[4]);const service=repclassMap.get(repclass)||"UNMAPPED";if(service==="UNMAPPED")unmapped++;
+    const task=clean(row[5]);
+    const record={
+      order,customer,branchCode,
+      branchName:BRANCH_BY_CODE.get(branchCode)?.name||customer,
+      repclass,service,task,
+      acCheck:upper(task).includes("GARDA AC CHECK"),
+      due:row[11],vendor:clean(row[12]),status,opened:row[8],vendors:new Set()
+    };
+    orders.set(order,mergeOrder(orders.get(order),record));
+  }
+  if(unmapped)warnings.push(`${unmapped} eligible row(s) had a REPCLASS not mapped on the REPCLASS tab.`);
+  if(missingOrder)warnings.push(`${missingOrder} eligible row(s) were excluded because Column H Order was blank.`);
+  const list=[...orders.values()];
+  list.forEach(o=>{o.bucket=ecdBucket(o.due,reportDate);});
+  return {orders:list,eligibleRows,duplicateRows:Math.max(0,eligibleRows-list.length),unmapped};
+}
+function programMatches(order,key){
+  const rep=order.repclass,task=upper(order.task),service=order.service;
+  if(key==="pm")return service==="PM";
+  if(key==="dot")return service==="PM"&&(rep==="STATE INS"||rep==="OSC SI"||/\bDOT\b|STATE INSPECTION|ANNUAL INSPECTION/.test(task));
+  if(key==="lts")return rep==="GARDA LTS"||/\bLTS\b/.test(task);
+  if(key==="ac")return Boolean(order.acCheck||task.includes("GARDA AC CHECK"));
+  return false;
+}
+function summarizeOrders(orders){const e=emptyEcd();e.repairOrders=orders.length;orders.forEach(o=>{if(e[o.bucket]!==undefined)e[o.bucket]++;});return e;}
+function usefulRowsByCode(aoa,warnings,sheetName){
+  const map=new Map();for(let i=1;i<aoa.length;i++){const row=aoa[i]||[];const code=extractBranchCode(row[2]);if(!APPROVED_CODES.has(code))continue;const maxRoutes=toNumber(row[22]),totalUnits=toNumber(row[23]),oosUnits=toNumber(row[24]);const usefulCell=row[27];const useful=!isBlank(usefulCell)?Number(usefulCell):(maxRoutes?Math.max(0,totalUnits-oosUnits)/maxRoutes:null);map.set(code,{code,name:BRANCH_BY_CODE.get(code)?.name||clean(row[2]),maxRoutes,totalUnits,oosUnits,useful:Number.isFinite(useful)?useful:null});}
+  const missing=[...APPROVED_CODES].filter(c=>!map.has(c));if(missing.length)warnings.push(`${sheetName}: ${missing.length} approved branch code(s) were not matched.`);return map;
+}
+function summarizeUseful(map){
+  const rows=[...map.values()];const all={vendedSites:APPROVED_CODES.size,branches:rows.length,units:0,oos:0,maxRoutes:0,useful:null,underBranches:0,underUnits:0,underOos:0,underMaxRoutes:0,underUseful:null};
+  rows.forEach(r=>{all.units+=r.totalUnits;all.oos+=r.oosUnits;all.maxRoutes+=r.maxRoutes;if(r.useful!==null&&r.useful<1){all.underBranches++;all.underUnits+=r.totalUnits;all.underOos+=r.oosUnits;all.underMaxRoutes+=r.maxRoutes;}});
+  all.useful=all.maxRoutes?Math.max(0,all.units-all.oos)/all.maxRoutes:null;
+  all.underUseful=all.underMaxRoutes?Math.max(0,all.underUnits-all.underOos)/all.underMaxRoutes:null;
+  return all;
+}
+function vendorSummary(orders){
+  const totals={total:new Set(),ers:new Set(),repair:new Set(),pm:new Set()};const byBranch={};
+  APPROVED_BRANCHES.forEach(([name,code])=>{byBranch[code.replace(/\D/g,"")]={name,vendors:new Set(),openOrders:0};});
+  orders.forEach(o=>{const branch=byBranch[o.branchCode];if(branch)branch.openOrders++;const vendors=o.vendors&&o.vendors.size?o.vendors:(o.vendor&&validVendor(o.vendor)?new Set([o.vendor]):new Set());vendors.forEach(v=>{if(!validVendor(v))return;totals.total.add(v);if(o.service==="ERS")totals.ers.add(v);if(o.service==="VENDED REPAIR")totals.repair.add(v);if(o.service==="PM")totals.pm.add(v);if(branch)branch.vendors.add(v);});});
+  const branchCounts=Object.fromEntries(Object.entries(byBranch).map(([code,b])=>[code,b.vendors.size]));const below=Object.values(byBranch).filter(b=>b.vendors.size===0).length;
+  const top=Object.entries(byBranch).sort((a,b)=>a[1].vendors.size-b[1].vendors.size||b[1].openOrders-a[1].openOrders||a[1].name.localeCompare(b[1].name)).slice(0,10).map(([code,b])=>({code,name:b.name,count:b.vendors.size,openOrders:b.openOrders}));
+  return {total:totals.total.size,ers:totals.ers.size,repair:totals.repair.size,pm:totals.pm.size,belowCoverage:below,branchCounts,top};
+}
+function safePath(obj,path,fallback=null){return path.split(".").reduce((o,k)=>o&&o[k]!==undefined?o[k]:undefined,obj)??fallback;}
+function firstMetric(...values){for(const value of values){if(!isBlank(value))return value;}return null;}
+function normalizeFlashPercent(value){
+  if(isBlank(value))return null;
+  const n=Number(value);
+  if(!Number.isFinite(n))return null;
+  return Math.abs(n)>1?n/100:n;
+}
+function normalizeFlashPercentagePointDelta(value){
+  if(isBlank(value))return null;
+  const n=Number(value);
+  if(!Number.isFinite(n))return null;
+  return n/100;
+}
+function normalizeFlashHoursToMinutes(value){
+  if(isBlank(value))return null;
+  const n=Number(value);
+  return Number.isFinite(n)?n*60:null;
+}
+function flashProgramKey(label){
+  const value=upper(label);
+  if(value.includes("LTS")&&value.includes("PM"))return "lts";
+  if(value.includes("DOT"))return "dot";
+  if(value.includes("A/C")||value.includes("A C COMPLIANCE")||value.includes("AC COMPLIANCE"))return "ac";
+  if(value.includes("PM COMPLIANCE"))return "pm";
+  return "";
+}
+function flashVendorKey(label){
+  const value=upper(label);
+  if(value==="TOTAL # VENDORS"||value.includes("TOTAL # VENDOR"))return "total";
+  if(value.includes("UNIQUE ERS VENDORS"))return "ers";
+  if(value.includes("UNIQUE VENDED REPAIR VENDORS"))return "repair";
+  if(value.includes("UNIQUE PM VENDORS"))return "pm";
+  if(value.includes("BRANCH LOCATIONS BELOW VENDOR COVERAGE"))return "belowCoverage";
+  if(value.includes("TOP 10 BRANCHES NEEDING VENDOR COVERAGE"))return "topHeader";
+  return "";
+}
+function flashErsKey(label){
+  const value=upper(label);
+  if(value.includes("TOTAL CONTACTS HANDLED"))return ["contacts","number"];
+  if(value.includes("WITHIN 60 SECONDS"))return ["within60","percent"];
+  if(value.includes("TICKET VOLUME"))return ["ticketVolume","number"];
+  if(value.includes("SOS TIME"))return ["sos","hours"];
+  if(value==="DOWNTIME"||value.includes("AVERAGE DOWNTIME"))return ["downtime","hours"];
+  if(value.includes("CONTROLLABLE")&&value.includes("3+"))return ["controllable","percent"];
+  if(value.includes("3+")&&value.includes("DOWNTIME"))return ["threePlus","percent"];
+  return ["",""];
+}
+function parseGardaFlash(aoa,warnings){
+  const maintenance={};
+  PROGRAMS.forEach(program=>{
+    maintenance[program.key]={compliance:null,priorCompliance:null,reportedDelta:null};
+  });
+
+  const blankErs=()=>({
+    contacts:null,within60:null,ticketVolume:null,sos:null,
+    downtime:null,threePlus:null,controllable:null
+  });
+  const ersCurrent=blankErs();
+  const ersPrior=blankErs();
+  const ersDelta=blankErs();
+
+  const vendorCurrent={
+    total:null,ers:null,repair:null,pm:null,belowCoverage:null
+  };
+  const vendorPrior={
+    total:null,ers:null,repair:null,pm:null,belowCoverage:null
+  };
+  const vendorDelta={
+    total:null,ers:null,repair:null,pm:null,belowCoverage:null
+  };
+  const vendorTop=[];
+  let readingTopBranches=false;
+
+  const numberOrNull=value=>{
+    if(isBlank(value))return null;
+    const n=Number(value);
+    return Number.isFinite(n)?n:null;
+  };
+
+  for(let i=1;i<aoa.length;i++){
+    const row=aoa[i]||[];
+
+    const programKey=flashProgramKey(row[0]);
+    if(programKey){
+      maintenance[programKey]={
+        compliance:normalizeFlashPercent(row[1]),
+        priorCompliance:normalizeFlashPercent(row[2]),
+        reportedDelta:normalizeFlashPercentagePointDelta(row[3])
+      };
+    }
+
+    const [ersKey,ersType]=flashErsKey(row[5]);
+    if(ersKey){
+      const convert=value=>{
+        if(ersType==="percent")return normalizeFlashPercent(value);
+        if(ersType==="hours")return normalizeFlashHoursToMinutes(value);
+        return numberOrNull(value);
+      };
+      ersCurrent[ersKey]=convert(row[6]);
+      ersPrior[ersKey]=convert(row[7]);
+      ersDelta[ersKey]=convert(row[8]);
+    }
+
+    const vendorLabel=String(row[10]??"").trim();
+    const vendorKey=flashVendorKey(vendorLabel);
+
+    if(vendorKey==="topHeader"){
+      readingTopBranches=true;
+      continue;
+    }
+
+    if(vendorKey){
+      readingTopBranches=false;
+      vendorCurrent[vendorKey]=numberOrNull(row[12]);
+      vendorPrior[vendorKey]=numberOrNull(row[11]);
+      vendorDelta[vendorKey]=numberOrNull(row[13]);
+      continue;
+    }
+
+    if(readingTopBranches&&vendorLabel){
+      vendorTop.push({
+        name:vendorLabel,
+        prior:numberOrNull(row[11]),
+        current:numberOrNull(row[12]),
+        reportedDelta:numberOrNull(row[13])
+      });
+    }
+  }
+
+  const expectedPrograms=["pm","dot","lts"];
+  const missingPrograms=expectedPrograms
+    .filter(key=>isBlank(maintenance[key].compliance))
+    .map(key=>PROGRAMS.find(program=>program.key===key)?.label||key);
+  if(missingPrograms.length){
+    warnings.push(`GARDA FLASH: missing current compliance for ${missingPrograms.join(", ")}.`);
+  }
+
+  const missingErs=Object.entries(ersCurrent)
+    .filter(([,value])=>isBlank(value))
+    .map(([key])=>key);
+  if(missingErs.length){
+    warnings.push(`GARDA FLASH: missing ERS current value(s): ${missingErs.join(", ")}.`);
+  }
+
+  const missingVendor=Object.entries(vendorCurrent)
+    .filter(([,value])=>isBlank(value))
+    .map(([key])=>key);
+  if(missingVendor.length){
+    warnings.push(`GARDA FLASH: missing Vendor Coverage current value(s): ${missingVendor.join(", ")}.`);
+  }
+  if(vendorTop.length<10){
+    warnings.push(`GARDA FLASH: only ${vendorTop.length} branch row(s) were found beneath Top 10 Branches Needing Vendor Coverage.`);
+  }
+
+  return {
+    maintenance,
+    ers:{current:ersCurrent,prior:ersPrior,reportedDelta:ersDelta},
+    vendor:{
+      ...vendorCurrent,
+      prior:vendorPrior,
+      reportedDelta:vendorDelta,
+      top:vendorTop.slice(0,10)
+    }
+  };
+}
+function sourceDeltaCell(reportedDelta,prior,current,type="number"){
+  if(isBlank(reportedDelta))return deltaCell(prior,current,type);
+  const d=Number(reportedDelta);
+  let cls="delta-neutral";
+  if(d!==0){
+    cls=type==="time"
+      ?(d<0?"delta-up":"delta-down")
+      :(d>0?"delta-up":"delta-down");
+  }
+
+  let text;
+  if(type==="percent"){
+    const bps=Math.round(d*10000);
+    const sign=bps>0?"+":"";
+    text=`${sign}${bps.toLocaleString()} bps`;
+  }else if(type==="time"){
+    text=d===0?"0m":`${timeValue(Math.abs(d))}${d<0?" shorter":" longer"}`;
+  }else{
+    const sign=d>0?"+":"";
+    text=`${sign}${Number(d).toLocaleString(undefined,{maximumFractionDigits:1})}`;
+  }
+  return `<td class="num ${cls}"><strong>${text}</strong></td>`;
+}
+function mergeComputedAndSupplemental(computed,supplemental,prior){
+  const maintenance={};
+  PROGRAMS.forEach(program=>{
+    const source=computed.maintenance[program.key];
+    maintenance[program.key]={
+      ...source,
+      priorCompliance:firstMetric(
+        source.priorCompliance,
+        safePath(prior,`maintenance.${program.key}.compliance`,null)
+      ),
+      compliance:firstMetric(
+        source.compliance,
+        safePath(supplemental,`maintenance.${program.key}.current`,null)
+      ),
+      reportedDelta:source.reportedDelta,
+      achievable:safePath(supplemental,`maintenance.${program.key}.achievable`,null),
+      gap:safePath(supplemental,`maintenance.${program.key}.gap`,null),
+      priorEcd:safePath(prior,`maintenance.${program.key}.ecd`,null)
+    };
+  });
+
+  const supplementalErs={
+    contacts:safePath(supplemental,"ers.contacts",null),
+    within60:safePath(supplemental,"ers.within60",null),
+    ticketVolume:safePath(supplemental,"ers.ticketVolume",null),
+    sos:safePath(supplemental,"ers.sosMinutes",null),
+    downtime:safePath(supplemental,"ers.downtimeMinutes",null),
+    threePlus:safePath(supplemental,"ers.threePlus",null),
+    controllable:safePath(supplemental,"ers.controllable",null)
+  };
+  const snapshotErs=safePath(prior,"ers",{});
+  const ersCurrent={};
+  const ersPrior={};
+
+  ["contacts","within60","ticketVolume","sos","downtime","threePlus","controllable"].forEach(key=>{
+    ersCurrent[key]=firstMetric(computed.ers.current?.[key],supplementalErs[key]);
+    ersPrior[key]=firstMetric(computed.ers.prior?.[key],snapshotErs?.[key]);
+  });
+
+  return {
+    ...computed,
+    maintenance,
+    ers:{
+      current:ersCurrent,
+      prior:ersPrior,
+      reportedDelta:computed.ers.reportedDelta||{}
+    },
+    vendor:{...computed.vendor,prior:computed.vendor.prior||safePath(prior,"vendor",{})}
+  };
+}
+function parseWorkbook(buffer){
+  const warnings=[];
+  const workbook=XLSX.read(buffer,{type:"array",cellDates:true});
+
+  const vro=sheetAoa(workbook,name=>name.includes("vro export"));
+  const rep=sheetAoa(workbook,name=>name.includes("repclass")||name.includes("rep class"));
+  const useful=sheetAoa(workbook,name=>name.includes("useful")&&!name.includes("dod")&&!name.includes("day over day"));
+  const dod=sheetAoa(workbook,name=>name.includes("useful")&&(name.includes("dod")||name.includes("day over day")));
+  const gardaFlash=sheetAoa(workbook,name=>name.includes("garda flash"));
+
+  if(!vro.aoa.length)throw new Error("VRO Export tab was not found.");
+  if(!rep.aoa.length)throw new Error("REPCLASS tab was not found.");
+  if(!useful.aoa.length)throw new Error("Useful % tab was not found.");
+  if(!gardaFlash.aoa.length)throw new Error("GARDA FLASH tab was not found.");
+  if(!dod.aoa.length){
+    warnings.push("Useful % DOD tab was not found; prior-day usefulness values will be blank.");
+  }
+
+  validateHeader(vro.aoa,[
+    [0,"CUSTOMER"],[4,"TYPE"],[7,"ORDER"],
+    [11,"UNIT DUE DATE"],[12,"VENDOR"],[14,"STATUS"]
+  ],vro.name,warnings);
+  validateHeader(rep.aoa,[[0,"REPCLASS"],[1,"SERVICE"]],rep.name,warnings);
+  validateHeader(useful.aoa,[
+    [2,"BRANCH"],[22,"TOTAL - MAX ROUTES"],[23,"TOTAL - TOTAL UNITS"],
+    [24,"TOTAL - OOS UNITS"],[27,"TOTAL - USEFUL %"]
+  ],useful.name,warnings);
+  validateHeader(gardaFlash.aoa,[
+    [0,"SERVICE"],[1,"CURRENT COMPLIANCE"],[2,"DAY PRIOR"],[3,"DELTA"],
+    [5,"ERS REPORTING"],[6,"CURRENT"],[7,"PREVIOUS"],[8,"DELTA"],
+    [10,"VENDOR COVERAGE"],[11,"PAST STATE"],[12,"PRESENT STATE"],[13,"DELTA"]
+  ],gardaFlash.name,warnings);
+
+  const repclassMap=buildRepclassMap(rep.aoa);
+  const vroResult=parseVroRows(vro.aoa,repclassMap,selectedReportDate(),warnings);
+  const usefulCurrent=summarizeUseful(usefulRowsByCode(useful.aoa,warnings,useful.name));
+  const usefulPrior=dod.aoa.length
+    ?summarizeUseful(usefulRowsByCode(dod.aoa,warnings,dod.name))
+    :null;
+  const flash=parseGardaFlash(gardaFlash.aoa,warnings);
+
+  const vrOrders=vroResult.orders.filter(order=>order.service==="VENDED REPAIR");
+  const maintenance={};
+  PROGRAMS.forEach(program=>{
+    maintenance[program.key]={
+      ecd:summarizeOrders(vroResult.orders.filter(order=>programMatches(order,program.key))),
+      compliance:flash.maintenance[program.key].compliance,
+      priorCompliance:flash.maintenance[program.key].priorCompliance,
+      reportedDelta:flash.maintenance[program.key].reportedDelta
+    };
+  });
+
+  return {
+    metadata:{
+      loadedAt:new Date().toISOString(),
+      reportDate:$("#report-date").value,
+      workbookSheets:workbook.SheetNames,
+      eligibleRows:vroResult.eligibleRows,
+      uniqueOpenOrders:vroResult.orders.length,
+      duplicateRows:vroResult.duplicateRows,
+      unmappedRows:vroResult.unmapped
+    },
+    vendedRepair:{current:usefulCurrent,prior:usefulPrior},
+    vrEcd:summarizeOrders(vrOrders),
+    maintenance,
+    vendor:flash.vendor,
+    ers:flash.ers,
+    warnings
+  };
+}
+
+async function fetchWorkbookBuffer(){
+  const configured=firebase.app().options.storageBucket||"";const buckets=[...new Set([configured,"workflow-dashboard-e6134.firebasestorage.app","workflow-dashboard-e6134.appspot.com"].filter(Boolean))];let lastError=null;
+  async function fetchUrl(url){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30000);try{const response=await fetch(url+(url.includes("?")?"&":"?")+`_=${Date.now()}`,{cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.arrayBuffer();const sig=new Uint8Array(data.slice(0,2));if(data.byteLength<4||sig[0]!==0x50||sig[1]!==0x4b)throw new Error("Response is not a valid XLSX file");return data;}finally{clearTimeout(timer);}}
+  for(let attempt=1;attempt<=2;attempt++){for(const bucket of buckets){try{const ref=bucket===configured?firebase.storage().ref().child(WORKBOOK_PATH):firebase.storage().refFromURL(`gs://${bucket}/${WORKBOOK_PATH}`);const url=await ref.getDownloadURL();return await fetchUrl(url);}catch(err){lastError=err;console.warn(`Workbook fetch attempt ${attempt} failed for ${bucket}`,err);}}await new Promise(r=>setTimeout(r,750));}
+  throw new Error(`Firebase Storage fetch failed: ${lastError?.message||"Unknown error"}`);
+}
+async function loadPriorSnapshot(dateKey){
+  if(!db)return null;try{const snap=await db.ref(SNAPSHOT_ROOT).orderByKey().endAt(previousDateKey(dateKey)).limitToLast(1).once("value");const val=snap.val()||{};const keys=Object.keys(val).sort();if(keys.length)return val[keys[keys.length-1]];
+    const fallback=await db.ref("performanceReportingLogs/garda").orderByKey().endAt(previousDateKey(dateKey)).limitToLast(1).once("value");const fval=fallback.val()||{};const fkeys=Object.keys(fval).sort();if(fkeys.length){const f=fval[fkeys[fkeys.length-1]];return {vendor:{total:f.uniqueVendorCount??null},vendedRepair:{useful:f.usefulPct!=null?f.usefulPct/100:null,oos:f.oosUnits??null}};}return null;}catch(err){console.warn("Prior snapshot unavailable",err);return null;}
+}
+async function loadSupplemental(dateKey){if(!db)return {};try{const snap=await db.ref(`${SUPPLEMENTAL_ROOT}/${dateKey}`).once("value");return snap.val()||{};}catch(err){console.warn("Supplemental metrics unavailable",err);return {};}}
+function startSupplementalListener(dateKey){if(!db)return;if(supplementalListenerRef)supplementalListenerRef.off();supplementalListenerRef=db.ref(`${SUPPLEMENTAL_ROOT}/${dateKey}`);supplementalListenerRef.on("value",snap=>{supplementalData=snap.val()||{};if(lastParsed){dashboardData=mergeComputedAndSupplemental(lastParsed,supplementalData,priorSnapshot);renderAll();}});}
+async function saveSnapshot(data){if(!db||$("#report-date").value!==localDateKey())return;const dateKey=$("#report-date").value;const payload={savedAt:new Date().toISOString(),metadata:data.metadata,vendedRepair:data.vendedRepair.current,vrEcd:data.vrEcd,maintenance:Object.fromEntries(PROGRAMS.map(p=>[p.key,{compliance:data.maintenance[p.key].compliance,achievable:data.maintenance[p.key].achievable,gap:data.maintenance[p.key].gap,ecd:data.maintenance[p.key].ecd}])),vendor:{
+  total:data.vendor.total,
+  ers:data.vendor.ers,
+  repair:data.vendor.repair,
+  pm:data.vendor.pm,
+  belowCoverage:data.vendor.belowCoverage,
+  top:(data.vendor.top||[]).map(branch=>({
+    name:branch.name,
+    current:branch.current
+  }))
+},ers:data.ers.current};try{await db.ref(`${SNAPSHOT_ROOT}/${dateKey}`).set(payload);}catch(err){console.warn("Realtime Database snapshot save failed",err);}}
+async function processBuffer(buffer,sourceLabel){
+  setStatus("loading","Processing workbook",`${sourceLabel}: validating tabs and calculating Garda metrics…`);lastWorkbookBuffer=buffer;lastParsed=parseWorkbook(buffer);const dateKey=$("#report-date").value;[priorSnapshot,supplementalData]=await Promise.all([loadPriorSnapshot(dateKey),loadSupplemental(dateKey)]);dashboardData=mergeComputedAndSupplemental(lastParsed,supplementalData,priorSnapshot);renderAll();startSupplementalListener(dateKey);saveSnapshot(dashboardData);
+  $("#export-btn").disabled=false;setStatus("ok","Live workbook loaded",`${sourceLabel} • ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()} unique open Garda orders • ${dashboardData.metadata.duplicateRows.toLocaleString()} duplicate row(s) deduplicated by Column H Order.`);
+  $("#order-pill").textContent=`Open ROs ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()}`;$("#order-pill").className="pill good";$("#updated-pill").textContent=`Updated ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;$("#updated-pill").className="pill good";
+}
+async function loadFromFirebase(){try{setStatus("loading","Fetching Firebase workbook",`Downloading ${WORKBOOK_PATH} from Firebase Storage…`);const buffer=await fetchWorkbookBuffer();await processBuffer(buffer,"Firebase Storage");}catch(err){console.error(err);setStatus("error","Live workbook could not load",err.message);showWarning(["Confirm Firebase Storage access and the workbook filename, then allow the automatic refresh to retry."]);}}
+
+function renderVendedRepair(){
+  const current=dashboardData.vendedRepair.current;
+  const prior=dashboardData.vendedRepair.prior||{};
+  const mainRows=[
+    ["# of Vended Sites","vendedSites","number"],
+    ["# Branches","branches","number"],
+    ["# Units","units","number"],
+    ["# OOS Units","oos","number"],
+    ["Usefulness %","useful","percent"]
+  ];
+  const underRows=[
+    ["# Branches","underBranches","number"],
+    ["# Units","underUnits","number"],
+    ["# OOS Units","underOos","number"],
+    ["Usefulness %","underUseful","percent"]
+  ];
+
+  let rows=mainRows.map(([label,key,type])=>`
+    <tr>
+      <td class="label">${label}</td>
+      ${cell(prior[key],type)}
+      ${cell(current[key],type,true)}
+      ${deltaCell(prior[key],current[key],type)}
+    </tr>`
+  ).join("");
+
+  rows+=`<tr class="vendor-section-row">
+    <td colspan="4">Sites &lt;100% Usefulness</td>
+  </tr>`;
+
+  rows+=underRows.map(([label,key,type])=>`
+    <tr>
+      <td class="sub-label">${label}</td>
+      ${cell(prior[key],type)}
+      ${cell(current[key],type,true)}
+      ${deltaCell(prior[key],current[key],type)}
+    </tr>`
+  ).join("");
+
+  $("#vended-repair-body").innerHTML=rows;
+}
+function renderVrEcd(){$("#vr-ecd-body").innerHTML=ECD_ROWS.map(r=>`<tr><td class="label">${r.label}</td>${cell(dashboardData.vrEcd[r.key],"number",true)}</tr>`).join("");}
+function renderMaintenance(){
+  $("#maintenance-body").innerHTML=PROGRAMS.map((program,index)=>{
+    const metric=dashboardData.maintenance[program.key];
+
+    let header;
+    if(program.key==="ac"){
+      header=`<tr class="vendor-section-row">
+        <td colspan="6">A/C Compliance</td>
+      </tr>`;
+    }else{
+      const missingNote=isBlank(metric.compliance)
+        ?'<span class="cell-note">Compliance value not present on GARDA FLASH</span>'
+        :'';
+
+      header=`<tr class="${index?"group-start":""}">
+        <td class="label">${program.label}${missingNote}</td>
+        ${cell(metric.priorCompliance,"percent")}
+        ${cell(metric.compliance,"percent",true)}
+        ${sourceDeltaCell(metric.reportedDelta,metric.priorCompliance,metric.compliance,"percent")}
+        ${cell(metric.achievable,"percent")}
+        ${cell(metric.gap,"percent")}
+      </tr>`;
+    }
+
+    const details=MAINTENANCE_ECD_ROWS.map(row=>{
+      const prior=metric.priorEcd?.[row.key];
+      const current=metric.ecd[row.key];
+      return `<tr>
+        <td class="sub-label">${row.label}</td>
+        ${cell(prior)}
+        ${cell(current,"number",true)}
+        ${deltaCell(prior,current)}
+        <td></td><td></td>
+      </tr>`;
+    }).join("");
+
+    return header+details;
+  }).join("");
+}
+function renderVendor(){
+  const vendor=dashboardData.vendor||{};
+  const prior=vendor.prior||{};
+  const reported=vendor.reportedDelta||{};
+  const metrics=[
+    ["Total # Vendors","total"],
+    ["Unique ERS Vendors","ers"],
+    ["Unique Vended Repair Vendors","repair"],
+    ["Unique PM Vendors","pm"],
+    ["# Branch Locations Below Vendor Coverage","belowCoverage"]
+  ];
+
+  let rows=metrics.map(([label,key])=>`
+    <tr>
+      <td class="label">${label}</td>
+      ${cell(prior[key])}
+      ${cell(vendor[key],"number",true)}
+      ${sourceDeltaCell(reported[key],prior[key],vendor[key],"number")}
+    </tr>`
+  ).join("");
+
+  rows+=`<tr class="vendor-section-row">
+    <td colspan="4">Top 10 Branches Needing Vendor Coverage</td>
+  </tr>`;
+
+  rows+=(vendor.top||[]).map(branch=>`
+    <tr>
+      <td class="sub-label">${escapeHtml(branch.name)}</td>
+      ${cell(branch.prior)}
+      ${cell(branch.current,"number",true)}
+      ${sourceDeltaCell(branch.reportedDelta,branch.prior,branch.current,"number")}
+    </tr>`
+  ).join("");
+
+  $("#vendor-body").innerHTML=rows;
+}
+function renderErs(){
+  const current=dashboardData.ers.current||{};
+  const prior=dashboardData.ers.prior||{};
+  const reported=dashboardData.ers.reportedDelta||{};
+  const rows=[
+    ["Total Contacts Handled (Week)","contacts","number"],
+    ["Within 60 Seconds (Week)","within60","percent"],
+    ["Ticket Volume (ERS Events)","ticketVolume","number"],
+    ["SOS Time","sos","time"],
+    ["Downtime","downtime","time"],
+    ["% of ERS Tickets w/ 3+ hour Downtime","threePlus","percent"],
+    ["% of ERS Tickets w/ 3+ hour Downtime (Controllable)","controllable","percent"]
+  ];
+
+  $("#ers-body").innerHTML=rows.map(([label,key,type])=>{
+    const missing=isBlank(current[key])
+      ?'<span class="cell-note">Value not present on GARDA FLASH</span>'
+      :'';
+    return `<tr>
+      <td class="label">${label}${missing}</td>
+      ${cell(prior[key],type)}
+      ${cell(current[key],type,true)}
+      ${sourceDeltaCell(reported[key],prior[key],current[key],type)}
+    </tr>`;
+  }).join("");
+}
+function renderAll(){if(!dashboardData)return;renderVendedRepair();renderVrEcd();renderMaintenance();renderVendor();renderErs();const warnings=[...(dashboardData.warnings||[])];if(!Object.keys(supplementalData||{}).length)warnings.push(`No optional Achievable Compliance or Scheduling Gap values were found at ${SUPPLEMENTAL_ROOT}/${$("#report-date").value}. GARDA FLASH compliance and ERS reporting still populate normally.`);showWarning(warnings);$("#branch-pill").textContent=`${dashboardData.vendedRepair.current.branches}/67 branches matched`;$("#branch-pill").className=dashboardData.vendedRepair.current.branches===67?"pill good":"pill warn";}
+
+function excelValue(value,type){if(isBlank(value))return null;if(type==="time")return Number(value)/1440;return Number(value);}
+function excelDelta(prior,current,type){
+  if(isBlank(prior)||isBlank(current))return null;
+  const d=Number(current)-Number(prior);
+  if(type==="percent")return d*10000;
+  return type==="time"?d/1440:d;
+}
+function excelSourceDelta(reportedDelta,prior,current,type){
+  const raw=firstMetric(
+    reportedDelta,
+    isBlank(prior)||isBlank(current)?null:Number(current)-Number(prior)
+  );
+  if(isBlank(raw))return null;
+  const d=Number(raw);
+  if(type==="percent")return d*10000;
+  return type==="time"?d/1440:d;
+}
+function excelTimeDeltaText(reportedDelta,prior,current){
+  const raw=firstMetric(
+    reportedDelta,
+    isBlank(prior)||isBlank(current)?null:Number(current)-Number(prior)
+  );
+  if(isBlank(raw))return null;
+  const d=Number(raw);
+  if(d===0)return "0m";
+  return `${timeValue(Math.abs(d))}${d<0?" shorter":" longer"}`;
+}
+function makeSheet(rows,widths,typesByRow=[]){const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=widths.map(w=>({wch:w}));ws["!freeze"]={xSplit:0,ySplit:1};ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};const range=XLSX.utils.decode_range(ws["!ref"]);for(let r=0;r<=range.e.r;r++){for(let c=0;c<=range.e.c;c++){const ref=XLSX.utils.encode_cell({r,c});if(!ws[ref])ws[ref]={t:"s",v:""};const cell=ws[ref];cell.s={font:{name:"Raleway",sz:10,color:{rgb:r===0?"111111":c===0?"0070C0":"222222"},bold:r===0||c===0,italic:r>0&&c===0&&/^\s/.test(String(rows[r][0]||""))},fill:r===0?{fgColor:{rgb:"D9D9D9"}}:undefined,alignment:{horizontal:r===0?"left":c===0?"left":"right",vertical:"center",indent:r>0&&c===0&&/^\s/.test(String(rows[r][0]||""))?1:0},border:{top:{style:"thin",color:{rgb:"B7B7B7"}},bottom:{style:"thin",color:{rgb:"B7B7B7"}},left:{style:"thin",color:{rgb:"B7B7B7"}},right:{style:"thin",color:{rgb:"B7B7B7"}}}};}}
+  typesByRow.forEach(([rowIndex,type,start=1,end=rows[0].length-1])=>{
+    for(let c=start;c<=end;c++){
+      const ref=XLSX.utils.encode_cell({r:rowIndex,c});
+      if(!ws[ref])continue;
+      if(type==="percent"){
+        ws[ref].z=c===3?'0 "bps"':"0.0%";
+      }else{
+        ws[ref].z=type==="time"?"[h]:mm":"#,##0";
+      }
+    }
+  });
+  return ws;}
+function makeConsolidatedSheet(sections){
+  const maxCols=6;
+  const rows=[];
+  const headerRows=new Set();
+  const blankRows=new Set();
+  const mergedSectionRows=[];
+  const typeRows=[];
+
+  sections.forEach((section,sectionIndex)=>{
+    const start=rows.length;
+    section.rows.forEach((sourceRow,index)=>{
+      const row=[...sourceRow];
+      while(row.length<maxCols)row.push(null);
+      rows.push(row);
+      if(index===0)headerRows.add(start+index);
+    });
+
+    (section.types||[]).forEach(([rowIndex,type,startCol=1,endCol=section.rows[0].length-1])=>{
+      typeRows.push([start+rowIndex,type,startCol,endCol]);
+    });
+
+    (section.mergedRows||[]).forEach(rowIndex=>{
+      mergedSectionRows.push({
+        row:start+rowIndex,
+        endCol:Math.max(0,section.rows[0].length-1)
+      });
+    });
+
+    if(sectionIndex<sections.length-1){
+      blankRows.add(rows.length);
+      rows.push([null,null,null,null,null,null]);
+    }
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:48},{wch:16},{wch:16},{wch:24},{wch:23},{wch:18}];
+  ws["!merges"]=ws["!merges"]||[];
+
+  const range=XLSX.utils.decode_range(ws["!ref"]);
+  for(let r=0;r<=range.e.r;r++){
+    for(let c=0;c<=range.e.c;c++){
+      const ref=XLSX.utils.encode_cell({r,c});
+      if(!ws[ref])ws[ref]={t:"s",v:""};
+      const value=String(rows[r]?.[0]??"");
+      const isHeader=headerRows.has(r);
+      const isBlankRow=blankRows.has(r);
+      const isIndented=c===0&&/^\s/.test(value);
+
+      ws[ref].s={
+        font:{
+          name:"Raleway",
+          sz:10,
+          color:{rgb:isHeader?"111111":c===0?"0070C0":"222222"},
+          bold:isHeader||c===0,
+          italic:!isHeader&&isIndented
+        },
+        fill:isHeader?{fgColor:{rgb:"D9D9D9"}}:undefined,
+        alignment:{
+          horizontal:isHeader||c===0?"left":"right",
+          vertical:"center",
+          indent:isIndented?1:0
+        },
+        border:isBlankRow?undefined:{
+          top:{style:"thin",color:{rgb:"B7B7B7"}},
+          bottom:{style:"thin",color:{rgb:"B7B7B7"}},
+          left:{style:"thin",color:{rgb:"B7B7B7"}},
+          right:{style:"thin",color:{rgb:"B7B7B7"}}
+        }
+      };
+    }
+  }
+
+  mergedSectionRows.forEach(({row,endCol})=>{
+    ws["!merges"].push({s:{r:row,c:0},e:{r:row,c:endCol}});
+    const ref=XLSX.utils.encode_cell({r:row,c:0});
+    ws[ref].s={
+      ...(ws[ref].s||{}),
+      font:{name:"Raleway",sz:10,color:{rgb:"334155"},bold:true},
+      fill:{fgColor:{rgb:"ECEFF2"}},
+      alignment:{horizontal:"left",vertical:"center"},
+      border:{
+        top:{style:"thin",color:{rgb:"B7B7B7"}},
+        bottom:{style:"thin",color:{rgb:"B7B7B7"}},
+        left:{style:"thin",color:{rgb:"B7B7B7"}},
+        right:{style:"thin",color:{rgb:"B7B7B7"}}
+      }
+    };
+  });
+
+  typeRows.forEach(([rowIndex,type,startCol,endCol])=>{
+    for(let c=startCol;c<=endCol;c++){
+      const ref=XLSX.utils.encode_cell({r:rowIndex,c});
+      if(!ws[ref])continue;
+      if(type==="percent"){
+        ws[ref].z=c===3?'0 "bps"':"0.0%";
+      }else if(type==="time"){
+        ws[ref].z="[h]:mm";
+      }else{
+        ws[ref].z="#,##0";
+      }
+    }
+  });
+
+  return ws;
+}
+function exportAllTables(){
+  if(!dashboardData)return;
+  const wb=XLSX.utils.book_new();
+
+  // Vended Repair
+  const vr=dashboardData.vendedRepair;
+  const vrRows=[["Vended Repair","Prior Day","Current Day","Delta"]];
+  const vrTypes=[];
+  [["# of Vended Sites","vendedSites","number"],["# Branches","branches","number"],["# Units","units","number"],["# OOS Units","oos","number"],["Usefulness %","useful","percent"]].forEach(([label,key,type])=>{
+    const rowIndex=vrRows.length;
+    vrRows.push([
+      label,
+      excelValue(vr.prior?.[key],type),
+      excelValue(vr.current[key],type),
+      excelDelta(vr.prior?.[key],vr.current[key],type)
+    ]);
+    vrTypes.push([rowIndex,type]);
+  });
+  const usefulGroupRow=vrRows.length;
+  vrRows.push(["Sites <100% Usefulness",null,null,null]);
+  [["   # Branches","underBranches","number"],["   # Units","underUnits","number"],["   # OOS Units","underOos","number"],["   Usefulness %","underUseful","percent"]].forEach(([label,key,type])=>{
+    const rowIndex=vrRows.length;
+    vrRows.push([
+      label,
+      excelValue(vr.prior?.[key],type),
+      excelValue(vr.current[key],type),
+      excelDelta(vr.prior?.[key],vr.current[key],type)
+    ]);
+    vrTypes.push([rowIndex,type]);
+  });
+
+  // VR ECD Bucket
+  const ecdRows=[["VR ECD Bucket","Current State"]];
+  ECD_ROWS.forEach(row=>ecdRows.push([row.label,dashboardData.vrEcd[row.key]]));
+  const ecdTypes=ECD_ROWS.map((_,index)=>[index+1,"number",1,1]);
+
+  // Vended Maintenance
+  const maintRows=[["Vended Maintenance","Prior Day","Current Day","Delta","Achievable Compliance","Scheduling Gap"]];
+  const maintTypes=[];
+  let acMaintenanceGroupRow=null;
+  PROGRAMS.forEach(program=>{
+    const metric=dashboardData.maintenance[program.key];
+    let rowIndex=maintRows.length;
+
+    if(program.key==="ac"){
+      acMaintenanceGroupRow=rowIndex;
+      maintRows.push(["A/C Compliance",null,null,null,null,null]);
+    }else{
+      maintRows.push([
+        program.label,
+        excelValue(metric.priorCompliance,"percent"),
+        excelValue(metric.compliance,"percent"),
+        excelSourceDelta(metric.reportedDelta,metric.priorCompliance,metric.compliance,"percent"),
+        excelValue(metric.achievable,"percent"),
+        excelValue(metric.gap,"percent")
+      ]);
+      maintTypes.push([rowIndex,"percent",1,5]);
+    }
+
+    MAINTENANCE_ECD_ROWS.forEach(ecd=>{
+      rowIndex=maintRows.length;
+      maintRows.push([
+        `   ${ecd.label}`,
+        excelValue(metric.priorEcd?.[ecd.key]),
+        excelValue(metric.ecd[ecd.key]),
+        excelDelta(metric.priorEcd?.[ecd.key],metric.ecd[ecd.key]),
+        null,
+        null
+      ]);
+      maintTypes.push([rowIndex,"number",1,3]);
+    });
+  });
+
+  // Vendor Coverage
+  const vendor=dashboardData.vendor||{};
+  const vendorPrior=vendor.prior||{};
+  const vendorRows=[["Vendor Coverage","Past State","Present State","Delta"]];
+  [["Total # Vendors","total"],["Unique ERS Vendors","ers"],["Unique Vended Repair Vendors","repair"],["Unique PM Vendors","pm"],["# Branch Locations Below Vendor Coverage","belowCoverage"]].forEach(([label,key])=>{
+    vendorRows.push([
+      label,
+      excelValue(vendorPrior[key]),
+      excelValue(vendor[key]),
+      excelValue(firstMetric(
+        vendor.reportedDelta?.[key],
+        isBlank(vendorPrior[key])||isBlank(vendor[key])
+          ?null
+          :Number(vendor[key])-Number(vendorPrior[key])
+      ))
+    ]);
+  });
+  const vendorGroupRow=vendorRows.length;
+  vendorRows.push(["Top 10 Branches Needing Vendor Coverage",null,null,null]);
+  (vendor.top||[]).forEach(branch=>{
+    vendorRows.push([
+      `   ${branch.name}`,
+      excelValue(branch.prior),
+      excelValue(branch.current),
+      excelValue(firstMetric(
+        branch.reportedDelta,
+        isBlank(branch.prior)||isBlank(branch.current)
+          ?null
+          :Number(branch.current)-Number(branch.prior)
+      ))
+    ]);
+  });
+
+  // ERS Metrics
+  const ersCurrent=dashboardData.ers.current;
+  const ersPrior=dashboardData.ers.prior||{};
+  const ersRows=[["ERS Metrics","Prior Day","Current Day","Delta"]];
+  const ersTypes=[];
+  [["Total Contacts Handled (Week)","contacts","number"],["Within 60 Seconds (Week)","within60","percent"],["Ticket Volume (ERS Events)","ticketVolume","number"],["SOS Time","sos","time"],["Downtime","downtime","time"],["% of ERS Tickets w/ 3+ hour Downtime","threePlus","percent"],["% of ERS Tickets w/ 3+ hour Downtime (Controllable)","controllable","percent"]].forEach(([label,key,type])=>{
+    const rowIndex=ersRows.length;
+    const exportedDelta=type==="time"
+      ?excelTimeDeltaText(dashboardData.ers.reportedDelta?.[key],ersPrior[key],ersCurrent[key])
+      :excelSourceDelta(dashboardData.ers.reportedDelta?.[key],ersPrior[key],ersCurrent[key],type);
+
+    ersRows.push([
+      label,
+      excelValue(ersPrior[key],type),
+      excelValue(ersCurrent[key],type),
+      exportedDelta
+    ]);
+    ersTypes.push(type==="time"
+      ?[rowIndex,type,1,2]
+      :[rowIndex,type]
+    );
+  });
+
+  // Consolidated sheet is intentionally first.
+  const consolidatedSheet=makeConsolidatedSheet([
+    {
+      rows:vrRows,
+      types:vrTypes,
+      mergedRows:[usefulGroupRow]
+    },
+    {
+      rows:ecdRows,
+      types:ecdTypes
+    },
+    {
+      rows:maintRows,
+      types:maintTypes,
+      mergedRows:acMaintenanceGroupRow===null?[]:[acMaintenanceGroupRow]
+    },
+    {
+      rows:vendorRows,
+      mergedRows:[vendorGroupRow]
+    },
+    {
+      rows:ersRows,
+      types:ersTypes
+    }
+  ]);
+  XLSX.utils.book_append_sheet(wb,consolidatedSheet,"Consolidated");
+
+  // Existing individual tabs remain.
+  const vrSheet=makeSheet(vrRows,[32,15,15,15],vrTypes);
+  vrSheet["!merges"]=(vrSheet["!merges"]||[]).concat([{
+    s:{r:usefulGroupRow,c:0},
+    e:{r:usefulGroupRow,c:3}
+  }]);
+  const usefulGroupRef=XLSX.utils.encode_cell({r:usefulGroupRow,c:0});
+  vrSheet[usefulGroupRef].s={
+    ...(vrSheet[usefulGroupRef].s||{}),
+    font:{name:"Raleway",sz:10,color:{rgb:"334155"},bold:true},
+    fill:{fgColor:{rgb:"ECEFF2"}},
+    alignment:{horizontal:"left",vertical:"center"}
+  };
+  XLSX.utils.book_append_sheet(wb,vrSheet,"Vended Repair");
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    makeSheet(ecdRows,[34,18],ecdTypes),
+    "VR ECD Bucket"
+  );
+
+  const maintenanceSheet=makeSheet(maintRows,[34,15,15,15,23,18],maintTypes);
+  if(acMaintenanceGroupRow!==null){
+    maintenanceSheet["!merges"]=(maintenanceSheet["!merges"]||[]).concat([{
+      s:{r:acMaintenanceGroupRow,c:0},
+      e:{r:acMaintenanceGroupRow,c:5}
+    }]);
+    const acGroupRef=XLSX.utils.encode_cell({r:acMaintenanceGroupRow,c:0});
+    maintenanceSheet[acGroupRef].s={
+      ...(maintenanceSheet[acGroupRef].s||{}),
+      font:{name:"Raleway",sz:10,color:{rgb:"334155"},bold:true},
+      fill:{fgColor:{rgb:"ECEFF2"}},
+      alignment:{horizontal:"left",vertical:"center"}
+    };
+  }
+  XLSX.utils.book_append_sheet(
+    wb,
+    maintenanceSheet,
+    "Vended Maintenance"
+  );
+
+  const vendorSheet=makeSheet(vendorRows,[48,15,15,15]);
+  vendorSheet["!merges"]=(vendorSheet["!merges"]||[]).concat([{
+    s:{r:vendorGroupRow,c:0},
+    e:{r:vendorGroupRow,c:3}
+  }]);
+  const vendorGroupRef=XLSX.utils.encode_cell({r:vendorGroupRow,c:0});
+  vendorSheet[vendorGroupRef].s={
+    ...(vendorSheet[vendorGroupRef].s||{}),
+    font:{name:"Raleway",sz:10,color:{rgb:"334155"},bold:true},
+    fill:{fgColor:{rgb:"ECEFF2"}},
+    alignment:{horizontal:"left",vertical:"center"}
+  };
+  XLSX.utils.book_append_sheet(wb,vendorSheet,"Vendor Coverage");
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    makeSheet(ersRows,[48,16,16,24],ersTypes),
+    "ERS Metrics"
+  );
+
+  XLSX.writeFile(
+    wb,
+    `Garda_Operational_Performance_${$("#report-date").value}.xlsx`
+  );
+}
+
+async function initialize(){if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();firebase.auth().onAuthStateChanged(user=>{if(user){$("#login-overlay").style.display="none";loadFromFirebase();}else{$("#login-overlay").style.display="flex";setStatus("loading","Waiting for Firebase authentication","Enter the OSC+ password to load the live workbook.");}});}
+$("#login-form").addEventListener("submit",async e=>{e.preventDefault();const error=$("#login-error");error.style.display="none";try{await firebase.auth().signInWithEmailAndPassword(MASTER_EMAIL,$("#login-password").value);}catch(err){console.error(err);error.textContent=err.message||"Incorrect password or Firebase authentication failed.";error.style.display="block";}});
+$("#export-btn").addEventListener("click",exportAllTables);
+$("#report-date").addEventListener("change",async()=>{if(!lastWorkbookBuffer)return;try{await processBuffer(lastWorkbookBuffer,"Recalculated from loaded workbook");}catch(err){setStatus("error","Recalculation failed",err.message);}});
+$("#report-date").value=localDateKey();initialize();setInterval(()=>{if(firebase.auth().currentUser)loadFromFirebase();},15*60*1000);
+
+  </script>
+</body>
+</html>
