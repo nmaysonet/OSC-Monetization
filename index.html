@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OSC Monetization</title>
+  <title>OSC+ Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -162,6 +165,8 @@
 
     .wheel::before { width:31px; height:6px; }
     .wheel::after { width:6px; height:31px; }
+
+    .sidebar a.nav-item { display:block; text-decoration:none; }
 
     .nav-item {
       padding:16px 20px;
@@ -751,12 +756,13 @@
       <span class="wheel" aria-hidden="true"></span>
       <div class="brand-copy">
         <span class="brand-name">OSC<span class="brand-plus">+</span></span>
-        <span class="brand-subtitle">Monetization</span>
+        <span class="brand-subtitle">Analytics</span>
       </div>
     </div>
 
-    <div id="nav-report" class="nav-item active" onclick="showView('report')">OSC Monetization</div>
+    <div id="nav-report" class="nav-item active" onclick="showView('report')">OSC+ Analytics</div>
     <div id="nav-config" class="nav-item" onclick="showView('config')">Customer Configuration</div>
+    <a id="nav-opd" class="nav-item" href="opd.html">Garda Operational Performance</a>
 
     <div class="sidebar-truck">
       <svg width="150" height="76" viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
@@ -779,7 +785,7 @@
   <main class="app">
     <header class="topbar">
       <div class="title">
-        <h1 id="pageTitle">OSC Monetization</h1>
+        <h1 id="pageTitle">OSC+ Analytics</h1>
       </div>
 
       <div id="filterWrap" class="filter">
@@ -795,7 +801,7 @@
 
       <div class="report-panel">
         <div class="panel-head">
-          <h2>OSC Monetization Report</h2>
+          <h2>OSC+ Analytics Report</h2>
           <span id="summaryText" class="refresh">Connecting to Firebase...</span>
         </div>
 
@@ -1996,7 +2002,7 @@
         console.error(error);
         showError(error.message || String(error));
         reportArea.className = "loading";
-        reportArea.innerHTML = `<strong>Unable to build the OSC Monetization report.</strong>`;
+        reportArea.innerHTML = `<strong>Unable to build the OSC+ Analytics report.</strong>`;
         summaryText.textContent = "Data load failed";
       }
     }
@@ -2026,7 +2032,7 @@
       document.getElementById("nav-config").classList.toggle("active", !reportActive);
       document.getElementById("filterWrap").style.display = reportActive ? "flex" : "none";
       document.getElementById("pageTitle").textContent =
-        reportActive ? "OSC Monetization" : "Customer Configuration";
+        reportActive ? "OSC+ Analytics" : "Customer Configuration";
 
       if (!reportActive) renderConfigTable();
     }
