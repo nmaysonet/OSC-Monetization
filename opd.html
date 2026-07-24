@@ -1158,7 +1158,7 @@
             </section>
           </div>
 
-          <div class="opd-footer"><strong>Workbook-derived:</strong> Garda usefulness and unit totals use the 67 matched branches on Useful % / Useful % DOD; # Units is the sum of TOTAL - TOTAL UNITS. Open-order ECDs use VRO Export Column L, and A/C ECDs include each unique open Order whose Column F Task contains GARDA AC CHECK. Compliance comes from GARDA FLASH Columns A–D; Column D is interpreted as percentage points and displayed in basis points. ERS comes from F–I, and Vendor Coverage from K–N. Achievable Compliance and Scheduling Gap remain optional Realtime Database fields.</div>
+          <div class="opd-footer"><strong>Workbook-derived:</strong> Maintenance ECDs are unique Order + task-program items, so PM, DOT, A/C, and LTS tasks on the same order count separately. PM matches the five approved PM task phrases, DOT matches ANNUAL INSPECTION, A/C matches GARDA AC CHECK, and LTS matches GARDA LTS SYSTEM CHECK. Achievable Compliance and Scheduling Gap use unique VINs from the PM, DOT, and LTS tabs. Duplicate VIN rows use OR logic: if either mileage or time/frequency exceeds 100%, the VIN is overdue. A noncompliant VIN is scheduled only when every overdue requirement has a matching VRO with a valid Column L ECD and the order is not in Unassigned ROs.</div>
         </div>
       </div>
     </section>
@@ -1183,6 +1183,20 @@ const PROGRAMS=[
  {key:"lts",label:"LTS PM Compliance"},
  {key:"ac",label:"A/C Compliance"}
 ];
+const PM_TASK_PHRASES=[
+ "GARDA PB330 PM LEVEL B",
+ "GARDA E350 PM LEVEL B",
+ "STANDARD PM OR PM C",
+ "GARDA F650 PM LEVEL B",
+ "GARDA TRANSIT PM LEVEL B"
+];
+const MAINTENANCE_REQUIREMENT_LABELS={
+ pm:"PM",
+ dot:"DOT",
+ ac:"A/C",
+ lts:"LTS System Check",
+ coolant:"Coolant System Check"
+};
 const ECD_ROWS=[
  {key:"repairOrders",label:"# Repair Orders"},
  {key:"pastDue",label:"Past Due ECDs"},
@@ -1261,48 +1275,275 @@ function escapeHtml(v){return clean(v).replace(/[&<>'"]/g,ch=>({"&":"&amp;","<":
 function sheetAoa(workbook,predicate){const name=workbook.SheetNames.find(n=>predicate(n.toLowerCase()));if(!name)return {name:"",aoa:[]};return {name,aoa:XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:"",raw:true})};}
 function validateHeader(aoa,checks,sheetName,warnings){const header=aoa[0]||[];checks.forEach(([idx,expected])=>{if(!upper(header[idx]).includes(expected)){warnings.push(`${sheetName}: expected ${expected} in column ${XLSX.utils.encode_col(idx)}, found “${clean(header[idx])||"blank"}”. Fallback column positions were still used.`);}});}
 function buildRepclassMap(aoa){const map=new Map();for(let i=1;i<aoa.length;i++){const rep=upper(aoa[i]?.[0]);const service=upper(aoa[i]?.[1]);if(rep&&service)map.set(rep,service);}return map;}
+function maintenanceTaskTypes(task){
+  const text=upper(task);
+  const types=new Set();
+  if(PM_TASK_PHRASES.some(phrase=>text.includes(phrase)))types.add("pm");
+  if(text.includes("ANNUAL INSPECTION"))types.add("dot");
+  if(text.includes("GARDA AC CHECK"))types.add("ac");
+  if(text.includes("GARDA LTS SYSTEM CHECK"))types.add("lts");
+  if(text.includes("GARDA COOLANT SYSTEM CHECK"))types.add("coolant");
+  return [...types];
+}
 function mergeOrder(existing,incoming){
-  if(!existing)return {...incoming,vendors:new Set(incoming.vendor&&validVendor(incoming.vendor)?[incoming.vendor]:[])};
+  if(!existing){
+    return {
+      ...incoming,
+      vendors:new Set(
+        incoming.vendor&&validVendor(incoming.vendor)?[incoming.vendor]:[]
+      )
+    };
+  }
   if(incoming.vendor&&validVendor(incoming.vendor))existing.vendors.add(incoming.vendor);
-  if(!parseDate(existing.due)&&parseDate(incoming.due))existing.due=incoming.due;
+  const existingDue=parseDate(existing.due);
+  const incomingDue=parseDate(incoming.due);
+  if(!existingDue&&incomingDue)existing.due=incoming.due;
+  else if(existingDue&&incomingDue&&incomingDue<existingDue)existing.due=incoming.due;
   if(!existing.task&&incoming.task)existing.task=incoming.task;
-  existing.acCheck=Boolean(existing.acCheck||incoming.acCheck);
+  if(!existing.vin&&incoming.vin)existing.vin=incoming.vin;
+  return existing;
+}
+function mergeMaintenanceItem(existing,incoming){
+  if(!existing)return {...incoming};
+  const existingDue=parseDate(existing.due);
+  const incomingDue=parseDate(incoming.due);
+  if(!existingDue&&incomingDue)existing.due=incoming.due;
+  else if(existingDue&&incomingDue&&incomingDue<existingDue)existing.due=incoming.due;
+  if(existing.status==="UNASSIGNED ROS"&&incoming.status!=="UNASSIGNED ROS")existing.status=incoming.status;
+  if(!existing.vin&&incoming.vin)existing.vin=incoming.vin;
   return existing;
 }
 function parseVroRows(aoa,repclassMap,reportDate,warnings){
-  const orders=new Map();let eligibleRows=0,unmapped=0,missingOrder=0;
+  const orders=new Map();
+  const maintenanceItems=new Map();
+  let eligibleRows=0,unmapped=0,missingOrder=0;
+
   for(let i=1;i<aoa.length;i++){
-    const row=aoa[i]||[];const customer=clean(row[0]);if(!/\bGARDA\b/i.test(customer))continue;
-    const branchCode=extractBranchCode(customer);if(!APPROVED_CODES.has(branchCode))continue;
-    const status=upper(row[14]);if(!OPEN_STATUSES.has(status))continue;
+    const row=aoa[i]||[];
+    const customer=clean(row[0]);
+    if(!/\bGARDA\b/i.test(customer))continue;
+    const branchCode=extractBranchCode(customer);
+    if(!APPROVED_CODES.has(branchCode))continue;
+    const status=upper(row[14]);
+    if(!OPEN_STATUSES.has(status))continue;
     eligibleRows++;
-    const order=clean(row[7]);if(!order){missingOrder++;continue;}
-    const repclass=upper(row[4]);const service=repclassMap.get(repclass)||"UNMAPPED";if(service==="UNMAPPED")unmapped++;
+
+    const order=clean(row[7]);
+    if(!order){missingOrder++;continue;}
+    const repclass=upper(row[4]);
+    const service=repclassMap.get(repclass)||"UNMAPPED";
+    if(service==="UNMAPPED")unmapped++;
     const task=clean(row[5]);
+    const vin=upper(row[2]).replace(/\s+/g,"");
+
     const record={
       order,customer,branchCode,
       branchName:BRANCH_BY_CODE.get(branchCode)?.name||customer,
-      repclass,service,task,
-      acCheck:upper(task).includes("GARDA AC CHECK"),
+      repclass,service,task,vin,
       due:row[11],vendor:clean(row[12]),status,opened:row[8],vendors:new Set()
     };
     orders.set(order,mergeOrder(orders.get(order),record));
+
+    maintenanceTaskTypes(task).forEach(program=>{
+      const itemKey=`${order}|${program}`;
+      const item={
+        itemKey,order,program,vin,customer,branchCode,task,
+        due:row[11],status
+      };
+      maintenanceItems.set(
+        itemKey,
+        mergeMaintenanceItem(maintenanceItems.get(itemKey),item)
+      );
+    });
   }
+
   if(unmapped)warnings.push(`${unmapped} eligible row(s) had a REPCLASS not mapped on the REPCLASS tab.`);
   if(missingOrder)warnings.push(`${missingOrder} eligible row(s) were excluded because Column H Order was blank.`);
-  const list=[...orders.values()];
-  list.forEach(o=>{o.bucket=ecdBucket(o.due,reportDate);});
-  return {orders:list,eligibleRows,duplicateRows:Math.max(0,eligibleRows-list.length),unmapped};
+
+  const orderList=[...orders.values()];
+  orderList.forEach(order=>{order.bucket=ecdBucket(order.due,reportDate);});
+  const maintenanceList=[...maintenanceItems.values()];
+  maintenanceList.forEach(item=>{
+    item.bucket=ecdBucket(item.due,reportDate);
+    item.scheduled=item.status!=="UNASSIGNED ROS"&&Boolean(parseDate(item.due));
+  });
+
+  return {
+    orders:orderList,
+    maintenanceItems:maintenanceList,
+    eligibleRows,
+    duplicateRows:Math.max(0,eligibleRows-orderList.length),
+    unmapped
+  };
 }
-function programMatches(order,key){
-  const rep=order.repclass,task=upper(order.task),service=order.service;
-  if(key==="pm")return service==="PM";
-  if(key==="dot")return service==="PM"&&(rep==="STATE INS"||rep==="OSC SI"||/\bDOT\b|STATE INSPECTION|ANNUAL INSPECTION/.test(task));
-  if(key==="lts")return rep==="GARDA LTS"||/\bLTS\b/.test(task);
-  if(key==="ac")return Boolean(order.acCheck||task.includes("GARDA AC CHECK"));
-  return false;
+function summarizeOrders(orders){
+  const summary=emptyEcd();
+  summary.repairOrders=orders.length;
+  orders.forEach(order=>{
+    if(summary[order.bucket]!==undefined)summary[order.bucket]++;
+  });
+  return summary;
 }
-function summarizeOrders(orders){const e=emptyEcd();e.repairOrders=orders.length;orders.forEach(o=>{if(e[o.bucket]!==undefined)e[o.bucket]++;});return e;}
+function summarizeMaintenanceItems(items,program){
+  return summarizeOrders(items.filter(item=>item.program===program));
+}
+function normalizedVin(value){return upper(value).replace(/\s+/g,"");}
+function headerIndex(header,names,fallback=-1){
+  const normalized=header.map(value=>upper(value).replace(/[^A-Z0-9]/g,""));
+  for(const name of names){
+    const target=upper(name).replace(/[^A-Z0-9]/g,"");
+    const index=normalized.indexOf(target);
+    if(index>=0)return index;
+  }
+  return fallback;
+}
+function ltsRequirementCategory(description){
+  const text=upper(description);
+  if(PM_TASK_PHRASES.some(phrase=>text.includes(phrase)))return "pm";
+  if(text.includes("GARDA AC CHECK"))return "ac";
+  if(text.includes("GARDA LTS SYSTEM CHECK"))return "lts";
+  if(text.includes("GARDA COOLANT SYSTEM CHECK"))return "coolant";
+  return `unmapped:${text||"UNKNOWN"}`;
+}
+function parseComplianceUnitSheet(aoa,program,sheetName,warnings){
+  if(!aoa.length)return null;
+  const header=aoa[0]||[];
+  const vinIndex=headerIndex(header,["VIN"],5);
+  const componentIndex=headerIndex(header,["COMPCODE_DESC","COMP CODE DESC"],6);
+  const intervalIndex=headerIndex(header,["INTERVAL"],7);
+  const meterTypeIndex=headerIndex(header,["METERTYPE","METER TYPE"],8);
+  const dueCategoryIndex=headerIndex(header,["DUE CATEGORY"],-1);
+  const duePercentIndex=headerIndex(header,["DUEPERCENT","DUE PERCENT"],program==="lts"?10:11);
+  const units=new Map();
+  let sourceRows=0,blankVinRows=0;
+
+  for(let rowIndex=1;rowIndex<aoa.length;rowIndex++){
+    const row=aoa[rowIndex]||[];
+    const vin=normalizedVin(row[vinIndex]);
+    if(!vin){
+      if(row.some(value=>!isBlank(value)))blankVinRows++;
+      continue;
+    }
+    sourceRows++;
+    if(!units.has(vin))units.set(vin,{vin,rowCount:0,overdueRequirements:new Set(),rows:[]});
+    const unit=units.get(vin);
+    const dueCategory=dueCategoryIndex>=0?upper(row[dueCategoryIndex]):"";
+    const duePercent=Number(row[duePercentIndex]);
+    const overdue=dueCategory==="OVERDUE"||(Number.isFinite(duePercent)&&duePercent>1);
+    const requirement=program==="lts"?ltsRequirementCategory(row[componentIndex]):program;
+    unit.rowCount++;
+    unit.rows.push({
+      requirement,
+      interval:row[intervalIndex],
+      meterType:clean(row[meterTypeIndex]),
+      duePercent:Number.isFinite(duePercent)?duePercent:null,
+      overdue
+    });
+    // OR logic across duplicate VIN rows: any mileage or time interval over 100% makes the VIN overdue.
+    if(overdue)unit.overdueRequirements.add(requirement);
+  }
+
+  if(blankVinRows)warnings.push(`${sheetName}: ${blankVinRows} populated row(s) had no VIN and were excluded.`);
+  const serializedUnits={};
+  let sourceCompliantUnits=0,duplicateVinCount=0;
+  const unmappedOverdueRequirements=new Set();
+  units.forEach((unit,vin)=>{
+    if(unit.rowCount>1)duplicateVinCount++;
+    if(unit.overdueRequirements.size===0)sourceCompliantUnits++;
+    unit.overdueRequirements.forEach(requirement=>{
+      if(requirement.startsWith("unmapped:"))unmappedOverdueRequirements.add(requirement.replace("unmapped:",""));
+    });
+    serializedUnits[vin]={
+      rowCount:unit.rowCount,
+      overdueRequirements:[...unit.overdueRequirements],
+      rows:unit.rows
+    };
+  });
+  if(unmappedOverdueRequirements.size){
+    warnings.push(`${sheetName}: overdue component description(s) could not be mapped to a VRO task: ${[...unmappedOverdueRequirements].join(", ")}.`);
+  }
+  return {
+    sheetName,program,sourceRows,totalUnits:units.size,
+    sourceCompliantUnits,
+    sourceNoncompliantUnits:units.size-sourceCompliantUnits,
+    duplicateVinCount,
+    units:serializedUnits
+  };
+}
+function scheduledRequirementsByVin(items){
+  const scheduled=new Map();
+  items.forEach(item=>{
+    // Unassigned ROs, blank/invalid ECDs, and missing VINs are not scheduled.
+    if(!item.vin||!item.scheduled)return;
+    if(!scheduled.has(item.vin))scheduled.set(item.vin,new Map());
+    const requirements=scheduled.get(item.vin);
+    if(!requirements.has(item.program))requirements.set(item.program,[]);
+    requirements.get(item.program).push(item);
+  });
+  return scheduled;
+}
+function projectedCompliance(program,currentCompliance,source,maintenanceItems){
+  if(!source||!source.totalUnits){
+    return {achievable:null,gap:null,totalUnits:0,scheduledRecoverableUnits:0,unscheduledNoncompliantUnits:0};
+  }
+  const scheduled=scheduledRequirementsByVin(maintenanceItems);
+  let scheduledRecoverableUnits=0,partiallyScheduledUnits=0;
+  const recoveryBuckets=emptyEcd();
+
+  Object.entries(source.units).forEach(([vin,unit])=>{
+    const overdueRequirements=new Set(unit.overdueRequirements||[]);
+    if(!overdueRequirements.size)return;
+    const scheduledForVin=scheduled.get(vin);
+    if(!scheduledForVin)return;
+    let covered=0;
+    const recoveryDates=[];
+    overdueRequirements.forEach(requirement=>{
+      const matches=scheduledForVin.get(requirement)||[];
+      if(matches.length){
+        covered++;
+        matches.forEach(item=>{
+          const due=parseDate(item.due);
+          if(due)recoveryDates.push(due);
+        });
+      }
+    });
+    if(covered===overdueRequirements.size){
+      scheduledRecoverableUnits++;
+      // A VIN becomes fully recoverable when its latest required scheduled task is due.
+      if(recoveryDates.length){
+        const latest=new Date(Math.max(...recoveryDates.map(date=>date.getTime())));
+        const bucket=ecdBucket(latest,selectedReportDate());
+        if(recoveryBuckets[bucket]!==undefined)recoveryBuckets[bucket]++;
+      }
+    }else if(covered>0){
+      partiallyScheduledUnits++;
+    }
+  });
+
+  const totalUnits=source.totalUnits;
+  const sourceNoncompliantUnits=source.sourceNoncompliantUnits;
+  const unscheduledNoncompliantUnits=Math.max(0,sourceNoncompliantUnits-scheduledRecoverableUnits);
+  const sourceCompliance=source.sourceCompliantUnits/totalUnits;
+  const sourceProjectedCompliance=Math.min(1,(source.sourceCompliantUnits+scheduledRecoverableUnits)/totalUnits);
+  const officialCurrent=Number(currentCompliance);
+  // Use the higher of official current compliance and the unique-VIN projection to avoid double-counting stale rows.
+  const achievable=Number.isFinite(officialCurrent)
+    ?Math.min(1,Math.max(officialCurrent,sourceProjectedCompliance))
+    :sourceProjectedCompliance;
+  // Scheduling gap is the share of currently noncompliant VINs not fully scheduled.
+  const gap=sourceNoncompliantUnits?unscheduledNoncompliantUnits/sourceNoncompliantUnits:0;
+
+  return {
+    program,achievable,gap,totalUnits,
+    officialCurrent:Number.isFinite(officialCurrent)?officialCurrent:null,
+    sourceCompliance,sourceProjectedCompliance,
+    sourceCompliantUnits:source.sourceCompliantUnits,
+    sourceNoncompliantUnits,
+    scheduledRecoverableUnits,partiallyScheduledUnits,unscheduledNoncompliantUnits,
+    duplicateVinCount:source.duplicateVinCount,
+    recoveryBuckets
+  };
+}
 function usefulRowsByCode(aoa,warnings,sheetName){
   const map=new Map();for(let i=1;i<aoa.length;i++){const row=aoa[i]||[];const code=extractBranchCode(row[2]);if(!APPROVED_CODES.has(code))continue;const maxRoutes=toNumber(row[22]),totalUnits=toNumber(row[23]),oosUnits=toNumber(row[24]);const usefulCell=row[27];const useful=!isBlank(usefulCell)?Number(usefulCell):(maxRoutes?Math.max(0,totalUnits-oosUnits)/maxRoutes:null);map.set(code,{code,name:BRANCH_BY_CODE.get(code)?.name||clean(row[2]),maxRoutes,totalUnits,oosUnits,useful:Number.isFinite(useful)?useful:null});}
   const missing=[...APPROVED_CODES].filter(c=>!map.has(c));if(missing.length)warnings.push(`${sheetName}: ${missing.length} approved branch code(s) were not matched.`);return map;
@@ -1526,8 +1767,15 @@ function mergeComputedAndSupplemental(computed,supplemental,prior){
         safePath(supplemental,`maintenance.${program.key}.current`,null)
       ),
       reportedDelta:source.reportedDelta,
-      achievable:safePath(supplemental,`maintenance.${program.key}.achievable`,null),
-      gap:safePath(supplemental,`maintenance.${program.key}.gap`,null),
+      achievable:firstMetric(
+        source.achievable,
+        safePath(supplemental,`maintenance.${program.key}.achievable`,null)
+      ),
+      gap:firstMetric(
+        source.gap,
+        safePath(supplemental,`maintenance.${program.key}.gap`,null)
+      ),
+      projection:source.projection||null,
       priorEcd:safePath(prior,`maintenance.${program.key}.ecd`,null)
     };
   });
@@ -1544,43 +1792,40 @@ function mergeComputedAndSupplemental(computed,supplemental,prior){
   const snapshotErs=safePath(prior,"ers",{});
   const ersCurrent={};
   const ersPrior={};
-
   ["contacts","within60","ticketVolume","sos","downtime","threePlus","controllable"].forEach(key=>{
     ersCurrent[key]=firstMetric(computed.ers.current?.[key],supplementalErs[key]);
     ersPrior[key]=firstMetric(computed.ers.prior?.[key],snapshotErs?.[key]);
   });
-
   return {
     ...computed,
     maintenance,
-    ers:{
-      current:ersCurrent,
-      prior:ersPrior,
-      reportedDelta:computed.ers.reportedDelta||{}
-    },
+    ers:{current:ersCurrent,prior:ersPrior,reportedDelta:computed.ers.reportedDelta||{}},
     vendor:{...computed.vendor,prior:computed.vendor.prior||safePath(prior,"vendor",{})}
   };
 }
 function parseWorkbook(buffer){
   const warnings=[];
   const workbook=XLSX.read(buffer,{type:"array",cellDates:true});
-
   const vro=sheetAoa(workbook,name=>name.includes("vro export"));
   const rep=sheetAoa(workbook,name=>name.includes("repclass")||name.includes("rep class"));
   const useful=sheetAoa(workbook,name=>name.includes("useful")&&!name.includes("dod")&&!name.includes("day over day"));
   const dod=sheetAoa(workbook,name=>name.includes("useful")&&(name.includes("dod")||name.includes("day over day")));
   const gardaFlash=sheetAoa(workbook,name=>name.includes("garda flash"));
+  const pmSheet=sheetAoa(workbook,name=>name.trim()==="pm");
+  const dotSheet=sheetAoa(workbook,name=>name.trim()==="dot");
+  const ltsSheet=sheetAoa(workbook,name=>name.trim()==="lts");
 
   if(!vro.aoa.length)throw new Error("VRO Export tab was not found.");
   if(!rep.aoa.length)throw new Error("REPCLASS tab was not found.");
   if(!useful.aoa.length)throw new Error("Useful % tab was not found.");
   if(!gardaFlash.aoa.length)throw new Error("GARDA FLASH tab was not found.");
-  if(!dod.aoa.length){
-    warnings.push("Useful % DOD tab was not found; prior-day usefulness values will be blank.");
-  }
+  if(!pmSheet.aoa.length)warnings.push("PM tab was not found; PM achievable compliance and scheduling gap will be blank.");
+  if(!dotSheet.aoa.length)warnings.push("DOT tab was not found; DOT achievable compliance and scheduling gap will be blank.");
+  if(!ltsSheet.aoa.length)warnings.push("LTS tab was not found; LTS achievable compliance and scheduling gap will be blank.");
+  if(!dod.aoa.length)warnings.push("Useful % DOD tab was not found; prior-day usefulness values will be blank.");
 
   validateHeader(vro.aoa,[
-    [0,"CUSTOMER"],[4,"TYPE"],[7,"ORDER"],
+    [0,"CUSTOMER"],[2,"VEHICLE"],[4,"TYPE"],[5,"TASK"],[7,"ORDER"],
     [11,"UNIT DUE DATE"],[12,"VENDOR"],[14,"STATUS"]
   ],vro.name,warnings);
   validateHeader(rep.aoa,[[0,"REPCLASS"],[1,"SERVICE"]],rep.name,warnings);
@@ -1593,23 +1838,46 @@ function parseWorkbook(buffer){
     [5,"ERS REPORTING"],[6,"CURRENT"],[7,"PREVIOUS"],[8,"DELTA"],
     [10,"VENDOR COVERAGE"],[11,"PAST STATE"],[12,"PRESENT STATE"],[13,"DELTA"]
   ],gardaFlash.name,warnings);
+  if(pmSheet.aoa.length)validateHeader(pmSheet.aoa,[
+    [5,"VIN"],[6,"COMPCODE_DESC"],[7,"INTERVAL"],[8,"METERTYPE"],
+    [9,"DUE CATEGORY"],[11,"DUEPERCENT"]
+  ],pmSheet.name,warnings);
+  if(dotSheet.aoa.length)validateHeader(dotSheet.aoa,[
+    [5,"VIN"],[6,"COMPCODE_DESC"],[7,"INTERVAL"],[8,"METERTYPE"],
+    [9,"DUE CATEGORY"],[11,"DUEPERCENT"]
+  ],dotSheet.name,warnings);
+  if(ltsSheet.aoa.length)validateHeader(ltsSheet.aoa,[
+    [5,"VIN"],[6,"COMPCODE_DESC"],[7,"INTERVAL"],[8,"METERTYPE"],[10,"DUEPERCENT"]
+  ],ltsSheet.name,warnings);
 
   const repclassMap=buildRepclassMap(rep.aoa);
   const vroResult=parseVroRows(vro.aoa,repclassMap,selectedReportDate(),warnings);
   const usefulCurrent=summarizeUseful(usefulRowsByCode(useful.aoa,warnings,useful.name));
-  const usefulPrior=dod.aoa.length
-    ?summarizeUseful(usefulRowsByCode(dod.aoa,warnings,dod.name))
-    :null;
+  const usefulPrior=dod.aoa.length?summarizeUseful(usefulRowsByCode(dod.aoa,warnings,dod.name)):null;
   const flash=parseGardaFlash(gardaFlash.aoa,warnings);
+  const complianceSources={
+    pm:pmSheet.aoa.length?parseComplianceUnitSheet(pmSheet.aoa,"pm",pmSheet.name,warnings):null,
+    dot:dotSheet.aoa.length?parseComplianceUnitSheet(dotSheet.aoa,"dot",dotSheet.name,warnings):null,
+    lts:ltsSheet.aoa.length?parseComplianceUnitSheet(ltsSheet.aoa,"lts",ltsSheet.name,warnings):null
+  };
 
   const vrOrders=vroResult.orders.filter(order=>order.service==="VENDED REPAIR");
   const maintenance={};
   PROGRAMS.forEach(program=>{
+    const compliance=flash.maintenance[program.key].compliance;
+    const source=program.key==="ac"?null:complianceSources[program.key];
+    const projection=program.key==="ac"?null:projectedCompliance(program.key,compliance,source,vroResult.maintenanceItems);
+    if(projection&&!isBlank(compliance)&&Math.abs(projection.sourceCompliance-Number(compliance))>=0.005){
+      warnings.push(`${program.label}: GARDA FLASH is ${pct(compliance)}; unique-VIN source compliance on ${source.sheetName} is ${pct(projection.sourceCompliance)}. Achievable Compliance uses the higher of the official baseline and the unique-VIN scheduled projection.`);
+    }
     maintenance[program.key]={
-      ecd:summarizeOrders(vroResult.orders.filter(order=>programMatches(order,program.key))),
-      compliance:flash.maintenance[program.key].compliance,
+      ecd:summarizeMaintenanceItems(vroResult.maintenanceItems,program.key),
+      compliance,
       priorCompliance:flash.maintenance[program.key].priorCompliance,
-      reportedDelta:flash.maintenance[program.key].reportedDelta
+      reportedDelta:flash.maintenance[program.key].reportedDelta,
+      achievable:projection?.achievable??null,
+      gap:projection?.gap??null,
+      projection
     };
   });
 
@@ -1620,6 +1888,7 @@ function parseWorkbook(buffer){
       workbookSheets:workbook.SheetNames,
       eligibleRows:vroResult.eligibleRows,
       uniqueOpenOrders:vroResult.orders.length,
+      uniqueMaintenanceItems:vroResult.maintenanceItems.length,
       duplicateRows:vroResult.duplicateRows,
       unmappedRows:vroResult.unmapped
     },
@@ -1631,7 +1900,6 @@ function parseWorkbook(buffer){
     warnings
   };
 }
-
 async function fetchWorkbookBuffer(){
   const configured=firebase.app().options.storageBucket||"";const buckets=[...new Set([configured,"workflow-dashboard-e6134.firebasestorage.app","workflow-dashboard-e6134.appspot.com"].filter(Boolean))];let lastError=null;
   async function fetchUrl(url){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30000);try{const response=await fetch(url+(url.includes("?")?"&":"?")+`_=${Date.now()}`,{cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.arrayBuffer();const sig=new Uint8Array(data.slice(0,2));if(data.byteLength<4||sig[0]!==0x50||sig[1]!==0x4b)throw new Error("Response is not a valid XLSX file");return data;}finally{clearTimeout(timer);}}
@@ -1656,9 +1924,28 @@ async function saveSnapshot(data){if(!db||$("#report-date").value!==localDateKey
   }))
 },ers:data.ers.current};try{await db.ref(`${SNAPSHOT_ROOT}/${dateKey}`).set(payload);}catch(err){console.warn("Realtime Database snapshot save failed",err);}}
 async function processBuffer(buffer,sourceLabel){
-  setStatus("loading","Processing workbook",`${sourceLabel}: validating tabs and calculating Garda metrics…`);lastWorkbookBuffer=buffer;lastParsed=parseWorkbook(buffer);const dateKey=$("#report-date").value;[priorSnapshot,supplementalData]=await Promise.all([loadPriorSnapshot(dateKey),loadSupplemental(dateKey)]);dashboardData=mergeComputedAndSupplemental(lastParsed,supplementalData,priorSnapshot);renderAll();startSupplementalListener(dateKey);saveSnapshot(dashboardData);
-  $("#export-btn").disabled=false;setStatus("ok","Live workbook loaded",`${sourceLabel} • ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()} unique open Garda orders • ${dashboardData.metadata.duplicateRows.toLocaleString()} duplicate row(s) deduplicated by Column H Order.`);
-  $("#order-pill").textContent=`Open ROs ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()}`;$("#order-pill").className="pill good";$("#updated-pill").textContent=`Updated ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;$("#updated-pill").className="pill good";
+  setStatus("loading","Processing workbook",`${sourceLabel}: validating tabs and calculating Garda metrics…`);
+  lastWorkbookBuffer=buffer;
+  lastParsed=parseWorkbook(buffer);
+  const dateKey=$("#report-date").value;
+  [priorSnapshot,supplementalData]=await Promise.all([
+    loadPriorSnapshot(dateKey),
+    loadSupplemental(dateKey)
+  ]);
+  dashboardData=mergeComputedAndSupplemental(lastParsed,supplementalData,priorSnapshot);
+  renderAll();
+  startSupplementalListener(dateKey);
+  saveSnapshot(dashboardData);
+  $("#export-btn").disabled=false;
+  setStatus(
+    "ok",
+    "Live workbook loaded",
+    `${sourceLabel} • ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()} unique open Garda orders • ${dashboardData.metadata.uniqueMaintenanceItems.toLocaleString()} unique maintenance task items • ${dashboardData.metadata.duplicateRows.toLocaleString()} duplicate row(s) deduplicated by Column H Order.`
+  );
+  $("#order-pill").textContent=`Open ROs ${dashboardData.metadata.uniqueOpenOrders.toLocaleString()}`;
+  $("#order-pill").className="pill good";
+  $("#updated-pill").textContent=`Updated ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
+  $("#updated-pill").className="pill good";
 }
 async function loadFromFirebase(){try{setStatus("loading","Fetching Firebase workbook",`Downloading ${WORKBOOK_PATH} from Firebase Storage…`);const buffer=await fetchWorkbookBuffer();await processBuffer(buffer,"Firebase Storage");}catch(err){console.error(err);setStatus("error","Live workbook could not load",err.message);showWarning(["Confirm Firebase Storage access and the workbook filename, then allow the automatic refresh to retry."]);}}
 
@@ -1704,30 +1991,36 @@ function renderVendedRepair(){
   $("#vended-repair-body").innerHTML=rows;
 }
 function renderVrEcd(){$("#vr-ecd-body").innerHTML=ECD_ROWS.map(r=>`<tr><td class="label">${r.label}</td>${cell(dashboardData.vrEcd[r.key],"number",true)}</tr>`).join("");}
+function projectionCell(value,projection,kind){
+  if(!projection)return cell(value,"percent");
+  const note=kind==="achievable"
+    ?`+${projection.scheduledRecoverableUnits.toLocaleString()} fully scheduled VINs`
+    :`${projection.unscheduledNoncompliantUnits.toLocaleString()} of ${projection.sourceNoncompliantUnits.toLocaleString()} overdue VINs`;
+  const title=kind==="achievable"
+    ?`Official current: ${pct(projection.officialCurrent)}. Unique-VIN source: ${pct(projection.sourceCompliance)} (${projection.sourceCompliantUnits}/${projection.totalUnits}). Unique-VIN scheduled projection: ${pct(projection.sourceProjectedCompliance)}. Fully scheduled noncompliant VINs: ${projection.scheduledRecoverableUnits}.`
+    :`Scheduling gap = noncompliant unique VINs not fully scheduled / all noncompliant unique VINs. A VIN is scheduled only when every overdue requirement has a matching VRO, a valid ECD, and a status other than Unassigned ROs. Partially scheduled VINs: ${projection.partiallyScheduledUnits}.`;
+  return `<td class="num ${isBlank(value)?"empty":""}" title="${escapeHtml(title)}">
+    <strong>${formatValue(value,"percent")}</strong>
+    <span class="cell-note">${escapeHtml(note)}</span>
+  </td>`;
+}
 function renderMaintenance(){
   $("#maintenance-body").innerHTML=PROGRAMS.map((program,index)=>{
     const metric=dashboardData.maintenance[program.key];
-
     let header;
     if(program.key==="ac"){
-      header=`<tr class="vendor-section-row">
-        <td colspan="6">A/C Compliance</td>
-      </tr>`;
+      header=`<tr class="vendor-section-row"><td colspan="6">A/C Compliance</td></tr>`;
     }else{
-      const missingNote=isBlank(metric.compliance)
-        ?'<span class="cell-note">Compliance value not present on GARDA FLASH</span>'
-        :'';
-
+      const missingNote=isBlank(metric.compliance)?'<span class="cell-note">Compliance value not present on GARDA FLASH</span>':'';
       header=`<tr class="${index?"group-start":""}">
         <td class="label">${program.label}${missingNote}</td>
         ${cell(metric.priorCompliance,"percent")}
         ${cell(metric.compliance,"percent",true)}
         ${sourceDeltaCell(metric.reportedDelta,metric.priorCompliance,metric.compliance,"percent")}
-        ${cell(metric.achievable,"percent")}
-        ${cell(metric.gap,"percent")}
+        ${projectionCell(metric.achievable,metric.projection,"achievable")}
+        ${projectionCell(metric.gap,metric.projection,"gap")}
       </tr>`;
     }
-
     const details=MAINTENANCE_ECD_ROWS.map(row=>{
       const prior=metric.priorEcd?.[row.key];
       const current=metric.ecd[row.key];
@@ -1739,7 +2032,6 @@ function renderMaintenance(){
         <td></td><td></td>
       </tr>`;
     }).join("");
-
     return header+details;
   }).join("");
 }
@@ -1805,7 +2097,14 @@ function renderErs(){
     </tr>`;
   }).join("");
 }
-function renderAll(){if(!dashboardData)return;renderVendedRepair();renderVrEcd();renderMaintenance();renderVendor();renderErs();const warnings=[...(dashboardData.warnings||[])];if(!Object.keys(supplementalData||{}).length)warnings.push(`No optional Achievable Compliance or Scheduling Gap values were found at ${SUPPLEMENTAL_ROOT}/${$("#report-date").value}. GARDA FLASH compliance and ERS reporting still populate normally.`);showWarning(warnings);$("#branch-pill").textContent=`${dashboardData.vendedRepair.current.branches}/67 branches matched`;$("#branch-pill").className=dashboardData.vendedRepair.current.branches===67?"pill good":"pill warn";}
+function renderAll(){
+  if(!dashboardData)return;
+  renderVendedRepair();renderVrEcd();renderMaintenance();renderVendor();renderErs();
+  const warnings=[...(dashboardData.warnings||[])];
+  showWarning(warnings);
+  $("#branch-pill").textContent=`${dashboardData.vendedRepair.current.branches}/67 branches matched`;
+  $("#branch-pill").className=dashboardData.vendedRepair.current.branches===67?"pill good":"pill warn";
+}
 
 function excelValue(value,type){if(isBlank(value))return null;if(type==="time")return Number(value)/1440;return Number(value);}
 function excelDelta(prior,current,type){
