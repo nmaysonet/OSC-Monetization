@@ -985,7 +985,13 @@
       "3615944 canada inc (dba conrep)":"CONREP",
       "distribution frankarl inc.":"Distribution Frankarl",
       "marc bon lait":"Marc Bon Lait",
-      "crownsource":"CrownSource"
+      "crownsource":"CrownSource",
+      "bartlett tree experts":"Bartlett",
+      "bartlett tree experts headquarters":"Bartlett",
+      "bartlett tree experts- ashburn, va":"Bartlett",
+      "macy's":"Macy's",
+      "macys":"Macy's",
+      "macy's inc.":"Macy's"
     };
 
     const ELIGIBLE_STAGE_TERMS = [
@@ -1046,6 +1052,25 @@
         .trim()
         .toLowerCase()
         .replace(/\s+/g, " ");
+    }
+
+    function anyRepclassRevenueCustomer(value) {
+      const key = String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (key === "bartlett" || key.includes("bartlett tree experts")) {
+        return "Bartlett";
+      }
+
+      if (/\bmacys?\b/.test(key) || key.includes("macy s")) {
+        return "Macy's";
+      }
+
+      return "";
     }
 
     function normalizeHeader(value) {
@@ -1153,7 +1178,7 @@
 
     function canonicalSalesforceCustomer(value) {
       const raw = String(value ?? "").trim();
-      return SALESFORCE_ALIASES[normalize(raw)] || raw;
+      return anyRepclassRevenueCustomer(raw) || SALESFORCE_ALIASES[normalize(raw)] || raw;
     }
 
     function isEligibleStage(value) {
@@ -1533,11 +1558,17 @@
         const roNumber = String(valueAt(row, index.roNumber) ?? "").trim();
         if (!roNumber) continue;
 
+        const sourceCustomer = String(valueAt(row, index.customer) ?? "").trim();
+        const anyRepclassCustomer = anyRepclassRevenueCustomer(sourceCustomer);
         const repclass = String(valueAt(row, index.repclass) ?? "").trim().toUpperCase();
-        const service = REPCLASS_SERVICE_MAP[repclass];
+
+        // Bartlett Tree Experts and Macy's are ERSA customers for monetization.
+        // Every VRO for these customers is eligible, regardless of REPCLASS,
+        // including blank or customer-specific repair classes not in the map.
+        const service = anyRepclassCustomer ? "ERS" : REPCLASS_SERVICE_MAP[repclass];
         if (!service) continue;
 
-        const customer = String(valueAt(row, index.customer) ?? "").trim();
+        const customer = anyRepclassCustomer || sourceCustomer;
         const opened = excelDate(valueAt(row, index.opened));
 
         if (!customer || !opened) continue;
