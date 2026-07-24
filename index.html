@@ -294,6 +294,14 @@
       border-bottom:1px solid var(--border);
     }
 
+    .panel-head-actions {
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
     .panel-head h2 {
       margin:0;
       font-size:17px;
@@ -802,7 +810,15 @@
       <div class="report-panel">
         <div class="panel-head">
           <h2>OSC+ Analytics Report</h2>
-          <span id="summaryText" class="refresh">Connecting to Firebase...</span>
+          <div class="panel-head-actions">
+            <span id="summaryText" class="refresh">Connecting to Firebase...</span>
+            <button id="exportCurrentViewButton"
+                    class="btn btn-gold"
+                    onclick="exportCurrentView()"
+                    disabled>
+              Export Current View
+            </button>
+          </div>
         </div>
 
         <div id="reportArea" class="loading">
@@ -825,6 +841,7 @@
           </div>
           <div class="config-actions">
             <button id="unlockButton" class="btn btn-dark" onclick="openUnlockModal()">Unlock Editing</button>
+            <button id="lockButton" class="btn btn-light" onclick="lockEditing()" disabled>Lock Editing</button>
             <button id="addCustomerButton" class="btn btn-gold" onclick="openCustomerEditor()" disabled>Add Customer</button>
           </div>
         </div>
@@ -2070,6 +2087,238 @@
       summaryText.textContent =
         `${new Set(rows.map(row => customerCore(row.customer))).size} customers · ` +
         `${rows.length} customer / service combinations · refreshed ${refreshed}`;
+
+      document.getElementById("exportCurrentViewButton").disabled = false;
+    }
+
+    function exportReportValue(value, type) {
+      if (value === null || value === undefined || value === "") return null;
+      const number = Number(value);
+
+      if (type === "percent") {
+        return Number.isFinite(number) ? number / 100 : null;
+      }
+
+      if (type === "money" || type === "integer") {
+        return Number.isFinite(number) ? number : null;
+      }
+
+      return value;
+    }
+
+    function exportDetailValues(row) {
+      const serviceDisplay =
+        row.serviceType === "ERS" ? "ERSA" :
+        row.serviceType === "Vended Repair" ? "Repair" :
+        row.serviceType;
+
+      return [
+        row.customer,
+        serviceDisplay,
+        row.dealStatus,
+        row.totalEstimatedDemand,
+        row.annualEstimatedRevenue,
+        row.annualEstimatedMarginDollars,
+        row.estimatedMarginPct,
+        row.annualizedCurrentRevenueRunRate,
+        row.annualizedCurrentDemandRate
+      ].map((value, index) =>
+        exportReportValue(value, REPORT_COLUMNS[index].type)
+      );
+    }
+
+    function exportMetricValues(metrics, blankCounts = false) {
+      const values = REPORT_COLUMNS.map(column =>
+        exportReportValue(metrics[column.key], column.type)
+      );
+
+      if (blankCounts) {
+        values[1] = null;
+        values[2] = null;
+      }
+
+      return values;
+    }
+
+    function exportCurrentView() {
+      const rows = filteredRows();
+      const incremental = rows.filter(
+        row => row.group === "Incremental OSC Customers"
+      );
+      const current = rows.filter(
+        row => row.group === "Current OSC Customers"
+      );
+
+      const sheetRows = [];
+      const rowKinds = [];
+      const sectionRows = [];
+
+      sheetRows.push(REPORT_COLUMNS.map(column => column.label));
+      rowKinds.push("header");
+
+      sheetRows.push(exportMetricValues(
+        segmentMetrics(
+          "Incremental Pipeline (Signed & In Legal)",
+          incremental,
+          false
+        )
+      ));
+      rowKinds.push("summary");
+
+      sheetRows.push(exportMetricValues(
+        segmentMetrics("Launched Business", current, true)
+      ));
+      rowKinds.push("summary");
+
+      sheetRows.push(new Array(REPORT_COLUMNS.length).fill(null));
+      rowKinds.push("spacer");
+
+      if (incremental.length) {
+        sectionRows.push(sheetRows.length);
+        sheetRows.push([
+          "Incremental Pipeline (Signed & In Legal)",
+          ...new Array(REPORT_COLUMNS.length - 1).fill(null)
+        ]);
+        rowKinds.push("section");
+
+        incremental.forEach(row => {
+          sheetRows.push(exportDetailValues(row));
+          rowKinds.push("detail");
+        });
+
+        sheetRows.push(exportMetricValues(
+          segmentMetrics("Total Incremental", incremental, true),
+          true
+        ));
+        rowKinds.push("total");
+
+        sheetRows.push(new Array(REPORT_COLUMNS.length).fill(null));
+        rowKinds.push("spacer");
+      }
+
+      if (current.length) {
+        sectionRows.push(sheetRows.length);
+        sheetRows.push([
+          "Launched Business",
+          ...new Array(REPORT_COLUMNS.length - 1).fill(null)
+        ]);
+        rowKinds.push("section");
+
+        current.forEach(row => {
+          sheetRows.push(exportDetailValues(row));
+          rowKinds.push("detail");
+        });
+
+        sheetRows.push(exportMetricValues(
+          segmentMetrics("Total Current", current, true),
+          true
+        ));
+        rowKinds.push("total");
+      }
+
+      sheetRows.push(exportMetricValues(
+        segmentMetrics("TOTAL OSC", rows, true),
+        true
+      ));
+      rowKinds.push("grand");
+
+      const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+      worksheet["!cols"] = REPORT_COLUMNS.map(column => ({
+        wch:Math.max(14, Math.round(column.width / 7.2))
+      }));
+      worksheet["!freeze"] = { xSplit:0, ySplit:1 };
+      worksheet["!merges"] = sectionRows.map(rowIndex => ({
+        s:{ r:rowIndex, c:0 },
+        e:{ r:rowIndex, c:REPORT_COLUMNS.length - 1 }
+      }));
+
+      const border = {
+        top:{ style:"thin", color:{ rgb:"C5CDD5" } },
+        bottom:{ style:"thin", color:{ rgb:"C5CDD5" } },
+        left:{ style:"thin", color:{ rgb:"C5CDD5" } },
+        right:{ style:"thin", color:{ rgb:"C5CDD5" } }
+      };
+
+      for (let rowIndex = 0; rowIndex < sheetRows.length; rowIndex++) {
+        const kind = rowKinds[rowIndex];
+
+        for (let columnIndex = 0; columnIndex < REPORT_COLUMNS.length; columnIndex++) {
+          const reference = XLSX.utils.encode_cell({
+            r:rowIndex,
+            c:columnIndex
+          });
+
+          if (!worksheet[reference]) {
+            worksheet[reference] = { t:"s", v:"" };
+          }
+
+          const cell = worksheet[reference];
+          const numeric = Boolean(REPORT_COLUMNS[columnIndex].type);
+
+          cell.s = {
+            font:{
+              name:"Raleway",
+              sz:10,
+              bold:["header","summary","section","total","grand"].includes(kind),
+              color:{
+                rgb:
+                  kind === "header" || kind === "grand"
+                    ? "FFFFFF"
+                    : "20262D"
+              }
+            },
+            fill:{
+              fgColor:{
+                rgb:
+                  kind === "header" ? "1F4E78" :
+                  kind === "summary" || kind === "section" ? "E8EDF2" :
+                  kind === "total" ? "D9E2EC" :
+                  kind === "grand" ? "26323F" :
+                  kind === "spacer" ? "F4F6F9" :
+                  "FFFFFF"
+              }
+            },
+            alignment:{
+              horizontal:
+                kind === "header"
+                  ? "center"
+                  : columnIndex === 0
+                    ? "left"
+                    : numeric
+                      ? "right"
+                      : "center",
+              vertical:"center",
+              wrapText:kind === "header"
+            },
+            border:kind === "spacer" ? undefined : border
+          };
+
+          if (rowIndex > 0 && numeric && cell.v !== null && cell.v !== "") {
+            const type = REPORT_COLUMNS[columnIndex].type;
+            cell.z =
+              type === "money" ? '$#,##0;[Red]-$#,##0' :
+              type === "percent" ? "0.0%" :
+              "#,##0";
+          }
+        }
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "OSC+ Analytics");
+
+      const selectedCustomer =
+        customerFilter.value === "ALL"
+          ? "All_Customers"
+          : customerFilter.value
+              .replace(/[^a-z0-9]+/gi, "_")
+              .replace(/^_+|_+$/g, "");
+
+      const date = new Date().toISOString().slice(0,10);
+
+      XLSX.writeFile(
+        workbook,
+        `OSC+_Analytics_${selectedCustomer}_${date}.xlsx`
+      );
     }
 
     function populateCustomers() {
@@ -2102,6 +2351,7 @@
           reportArea.className = "loading";
           reportArea.innerHTML = `<div class="spinner"></div>Loading report`;
           summaryText.textContent = "Loading...";
+          document.getElementById("exportCurrentViewButton").disabled = true;
         }
 
         const [salesforceBuffer, vroBuffer] = await Promise.all([
@@ -2156,12 +2406,17 @@
       const status = document.getElementById("editStatus");
       const addButton = document.getElementById("addCustomerButton");
       const unlockButton = document.getElementById("unlockButton");
+      const lockButton = document.getElementById("lockButton");
 
       status.textContent = EDIT_UNLOCKED ? "Editing Unlocked" : "Editing Locked";
       status.className = `unlock-badge ${EDIT_UNLOCKED ? "unlocked" : "locked"}`;
+
       addButton.disabled = !EDIT_UNLOCKED;
-      unlockButton.textContent = EDIT_UNLOCKED ? "Editing Unlocked" : "Unlock Editing";
+      unlockButton.textContent = EDIT_UNLOCKED
+        ? "Editing Unlocked"
+        : "Unlock Editing";
       unlockButton.disabled = EDIT_UNLOCKED;
+      lockButton.disabled = !EDIT_UNLOCKED;
 
       document.querySelectorAll(".config-edit-action").forEach(button => {
         button.disabled = !EDIT_UNLOCKED;
@@ -2202,6 +2457,17 @@
       sessionStorage.setItem("oscMonetizationEditUnlocked", "1");
       passwordField.value = "";
       closeModal("unlockModal");
+      updateEditControls();
+      renderConfigTable();
+    }
+
+    function lockEditing() {
+      EDIT_UNLOCKED = false;
+      sessionStorage.removeItem("oscMonetizationEditUnlocked");
+
+      closeModal("unlockModal");
+      closeModal("customerEditorModal");
+
       updateEditControls();
       renderConfigTable();
     }
