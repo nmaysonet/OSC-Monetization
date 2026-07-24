@@ -340,7 +340,7 @@
       font-size:12px;
     }
 
-    .report-table { min-width:1450px; }
+    .report-table { min-width:1710px; }
     .config-table { min-width:1450px; }
 
     thead th {
@@ -845,7 +845,7 @@
       </div>
       <div class="modal-body">
         <div class="password-note">
-          Enter the customer-configuration password. The unlocked state lasts for this browser tab.
+          Enter the customer-configuration password. The unlocked state lasts for this browser tab. Program launch dates are stored separately for ERS, PM, and Vended Repair.
         </div>
         <div class="field">
           <label for="editPassword">Edit Password</label>
@@ -871,16 +871,10 @@
       <div class="modal-body">
         <input id="manualRecordId" type="hidden">
 
-        <div class="annualization-controls">
-          <label class="existing-check">
-            <input id="manualExistingCustomer" type="checkbox" onchange="toggleLaunchDate()">
-            Existing Customer — launched before this year
-          </label>
-
-          <div class="field" style="min-width:230px">
-            <label for="manualLaunchDate">Launch Date</label>
-            <input id="manualLaunchDate" type="date">
-          </div>
+        <div class="password-note" style="margin-bottom:14px">
+          Set the annualization basis separately for each enabled program. Mark a program as
+          existing when it launched before the current year; otherwise enter that program’s
+          specific launch date.
         </div>
 
         <div class="service-editor-wrap">
@@ -890,6 +884,8 @@
                 <th style="width:190px">Customer</th>
                 <th style="width:165px">Service Type</th>
                 <th style="width:110px">Status</th>
+                <th style="width:125px">Existing Program</th>
+                <th style="width:135px">Program Launch Date</th>
                 <th style="width:130px">Total Estimated Demand</th>
                 <th style="width:145px">Annual Estimated Revenue</th>
                 <th style="width:145px">Annual Estimated Margin $</th>
@@ -1013,6 +1009,8 @@
       { key:"customer", label:"Customer", width:190 },
       { key:"serviceType", label:"Service Type", width:145 },
       { key:"dealStatus", label:"Status", width:105 },
+      { key:"annualizationBasis", label:"Annualization Basis", width:145 },
+      { key:"programLaunchDate", label:"Program Launch Date", width:130 },
       { key:"totalEstimatedDemand", label:"Total Estimated Demand", width:130, type:"integer" },
       { key:"annualEstimatedRevenue", label:"Annual Estimated Revenue", width:145, type:"money" },
       { key:"annualEstimatedMarginDollars", label:"Annual Estimated Margin $", width:145, type:"money" },
@@ -1325,26 +1323,50 @@
       return result;
     }
 
-    function resolveAnnualizationStart(record, matchedCustomer) {
+    function programAnnualizationSettings(record, service) {
+      const settings = record ? legacyServiceSettings(record, service) : null;
+
+      const existingProgram =
+        settings?.existingProgram ??
+        settings?.existingCustomer ??
+        record?.existingCustomer ??
+        false;
+
+      const launchDate =
+        settings?.launchDate ||
+        record?.launchDate ||
+        "";
+
+      return {
+        existingProgram:Boolean(existingProgram),
+        launchDate:String(launchDate || "")
+      };
+    }
+
+    function resolveAnnualizationStart(record, service, matchedCustomer) {
       const latest = VRO_DATA.latestDate || new Date();
       const yearStart = new Date(latest.getFullYear(), 0, 1);
+      const annualization = programAnnualizationSettings(record, service);
 
-      if (record?.existingCustomer) return yearStart;
+      if (annualization.existingProgram) return yearStart;
 
-      const launchDate = record?.launchDate
-        ? new Date(`${record.launchDate}T00:00:00`)
+      const launchDate = annualization.launchDate
+        ? new Date(`${annualization.launchDate}T00:00:00`)
         : null;
 
       if (launchDate && !Number.isNaN(launchDate.getTime())) {
         return launchDate > yearStart ? launchDate : yearStart;
       }
 
-      const firstVro = matchedCustomer?.vros
-        ?.map(vro => vro.opened)
+      const firstProgramVro = matchedCustomer?.vros
+        ?.filter(vro => vro.service === service)
+        .map(vro => vro.opened)
         .filter(Boolean)
         .sort((a,b) => a - b)[0];
 
-      if (firstVro) return firstVro > yearStart ? firstVro : yearStart;
+      if (firstProgramVro) {
+        return firstProgramVro > yearStart ? firstProgramVro : yearStart;
+      }
 
       return yearStart;
     }
@@ -1358,36 +1380,62 @@
           demand:0,
           baseSpend:0,
           annualizedDemand:0,
-          annualizedBaseSpend:0
+          annualizedBaseSpend:0,
+          serviceStarts:{}
         };
       }
 
-      const serviceSet = new Set(services?.length ? services : SERVICE_TYPES);
-      const start = resolveAnnualizationStart(record, matched);
-      const latest = VRO_DATA.latestDate;
-      const vros = matched.vros.filter(vro =>
-        serviceSet.has(vro.service) &&
-        vro.opened &&
-        vro.opened >= start &&
-        vro.opened <= latest
-      );
+      const serviceList = [...new Set(
+        services?.length ? services : SERVICE_TYPES
+      )];
+      const latest = VRO_DATA.latestDate || new Date();
 
-      const demand = vros.length;
-      const baseSpend = vros.reduce((sum, vro) => sum + vro.baseAmount, 0);
-      const days = Math.max(
-        1,
-        Math.floor((latest.getTime() - start.getTime()) / 86400000) + 1
-      );
-      const factor = 365 / days;
+      let demand = 0;
+      let baseSpend = 0;
+      let annualizedDemand = 0;
+      let annualizedBaseSpend = 0;
+      let earliestStart = null;
+      const serviceStarts = {};
+
+      for (const service of serviceList) {
+        const start = resolveAnnualizationStart(record, service, matched);
+        serviceStarts[service] = start;
+
+        if (!earliestStart || start < earliestStart) earliestStart = start;
+
+        const programVros = matched.vros.filter(vro =>
+          vro.service === service &&
+          vro.opened &&
+          vro.opened >= start &&
+          vro.opened <= latest
+        );
+
+        const programDemand = programVros.length;
+        const programBaseSpend = programVros.reduce(
+          (sum, vro) => sum + vro.baseAmount,
+          0
+        );
+        const days = Math.max(
+          1,
+          Math.floor((latest.getTime() - start.getTime()) / 86400000) + 1
+        );
+        const factor = 365 / days;
+
+        demand += programDemand;
+        baseSpend += programBaseSpend;
+        annualizedDemand += programDemand * factor;
+        annualizedBaseSpend += programBaseSpend * factor;
+      }
 
       return {
         matched:true,
         matchedName:matched.name,
         demand,
         baseSpend,
-        annualizedDemand:demand * factor,
-        annualizedBaseSpend:baseSpend * factor,
-        startDate:start
+        annualizedDemand,
+        annualizedBaseSpend,
+        startDate:earliestStart,
+        serviceStarts
       };
     }
 
@@ -1636,6 +1684,30 @@
       return record.services?.[service] || null;
     }
 
+    function annualizationDisplay(record, service, actual = null) {
+      const annualization = programAnnualizationSettings(record, service);
+
+      if (annualization.existingProgram) {
+        return {
+          annualizationBasis:"Existing Program",
+          programLaunchDate:"Before current year"
+        };
+      }
+
+      if (annualization.launchDate) {
+        return {
+          annualizationBasis:"Configured Launch",
+          programLaunchDate:annualization.launchDate
+        };
+      }
+
+      const inferred = actual?.serviceStarts?.[service] || actual?.startDate || null;
+      return {
+        annualizationBasis:"First VRO / Year Start",
+        programLaunchDate:inferred ? dateKey(inferred) : ""
+      };
+    }
+
     function calculateCurrentRow(customer, service, status, settings, record) {
       const actual = getActuals(customer, [service], record);
       const markupPct = numberOrZero(settings?.markup);
@@ -1655,12 +1727,16 @@
       const forecastRevenue = safeNumber(settings?.annualEstimatedRevenue);
       const forecastMargin = safeNumber(settings?.annualEstimatedMarginDollars);
 
+      const annualizationDisplayValues =
+        annualizationDisplay(record, service, actual);
+
       return {
         customer,
         group:"Current OSC Customers",
         serviceType:service,
         serviceTypes:[service],
         dealStatus:status,
+        ...annualizationDisplayValues,
         totalEstimatedDemand:safeNumber(settings?.totalEstimatedDemand),
         annualEstimatedRevenue:forecastRevenue,
         annualEstimatedMarginDollars:forecastMargin,
@@ -1714,12 +1790,16 @@
           currentDemandRate = actual.annualizedDemand;
         }
 
+        const annualizationDisplayValues =
+          annualizationDisplay(null, service, actual);
+
         rows.push({
           customer:item.customer,
           group:current ? "Current OSC Customers" : "Incremental OSC Customers",
           serviceType:service,
           serviceTypes:[service],
           dealStatus:status,
+          ...annualizationDisplayValues,
           totalEstimatedDemand:item.totalEstimatedDemand || null,
           annualEstimatedRevenue:item.annualEstimatedRevenue || null,
           annualEstimatedMarginDollars:forecastMargin || null,
@@ -1762,12 +1842,16 @@
             const annualRevenue = safeNumber(settings.annualEstimatedRevenue);
             const annualMargin = safeNumber(settings.annualEstimatedMarginDollars);
 
+            const annualizationDisplayValues =
+              annualizationDisplay(record, service, actual);
+
             rows.push({
               customer,
               group:"Incremental OSC Customers",
               serviceType:service,
               serviceTypes:[service],
               dealStatus:status,
+              ...annualizationDisplayValues,
               totalEstimatedDemand:safeNumber(settings.totalEstimatedDemand),
               annualEstimatedRevenue:annualRevenue,
               annualEstimatedMarginDollars:annualMargin,
@@ -2161,6 +2245,13 @@
               </label>
             </td>
             ${statusCell}
+            <td style="text-align:center">
+              <input id="${id("existingProgram")}" type="checkbox" disabled
+                     onchange="toggleServiceLaunchDate('${escapeText(service)}')">
+            </td>
+            <td>
+              <input id="${id("launchDate")}" type="date" disabled>
+            </td>
             <td><input id="${id("totalEstimatedDemand")}" type="number" step="any" disabled></td>
             <td><input id="${id("annualEstimatedRevenue")}" type="number" step="any" disabled
                        oninput="updateEditorMarginPct('${escapeText(service)}')"></td>
@@ -2186,7 +2277,22 @@
         input.disabled = !enabled;
       });
 
-      if (enabled) updateEditorMarginPct(service);
+      if (enabled) {
+        toggleServiceLaunchDate(service);
+        updateEditorMarginPct(service);
+      }
+    }
+
+    function toggleServiceLaunchDate(service) {
+      const enabled =
+        document.getElementById(serviceInputId(service, "enabled")).checked;
+      const existing =
+        document.getElementById(serviceInputId(service, "existingProgram")).checked;
+      const launchDate =
+        document.getElementById(serviceInputId(service, "launchDate"));
+
+      launchDate.disabled = !enabled || existing;
+      if (existing) launchDate.value = "";
     }
 
     function updateEditorMarginPct(service) {
@@ -2199,12 +2305,6 @@
         : "";
     }
 
-    function toggleLaunchDate() {
-      const existing = document.getElementById("manualExistingCustomer").checked;
-      const launchDate = document.getElementById("manualLaunchDate");
-      launchDate.disabled = existing;
-      if (existing) launchDate.value = "";
-    }
 
     function findSeedRows(customer) {
       return REPORT_ROWS.filter(row => customerCore(row.customer) === customerCore(customer));
@@ -2237,25 +2337,26 @@
 
       document.getElementById("manualCustomerName").value = seedCustomer;
       document.getElementById("manualStatus").value = "In Legal";
-      document.getElementById("manualExistingCustomer").checked = false;
-      document.getElementById("manualLaunchDate").value = "";
-      toggleLaunchDate();
-
       const record = recordId ? MANUAL_CUSTOMERS[recordId] : null;
 
       if (record) {
         document.getElementById("manualCustomerName").value = record.customer || "";
         document.getElementById("manualStatus").value = record.status || "In Legal";
-        document.getElementById("manualExistingCustomer").checked =
-          Boolean(record.existingCustomer);
-        document.getElementById("manualLaunchDate").value = record.launchDate || "";
-        toggleLaunchDate();
-
         for (const service of SERVICE_TYPES) {
           const settings = legacyServiceSettings(record, service);
           if (!settings?.enabled) continue;
 
           document.getElementById(serviceInputId(service, "enabled")).checked = true;
+
+          const annualization = programAnnualizationSettings(record, service);
+          document.getElementById(
+            serviceInputId(service, "existingProgram")
+          ).checked = annualization.existingProgram;
+          setInputValue(
+            serviceInputId(service, "launchDate"),
+            annualization.existingProgram ? "" : annualization.launchDate
+          );
+
           toggleServiceRow(service);
 
           for (const field of [
@@ -2308,22 +2409,34 @@
           }
 
           const matched = findMatchedVroCustomer(seedCustomer);
-          const firstDate = matched?.vros
-            ?.map(vro => vro.opened)
-            .filter(Boolean)
-            .sort((a,b) => a - b)[0];
+          const yearStart = new Date(VRO_DATA.latestDate.getFullYear(), 0, 1);
 
-          if (firstDate) {
-            const yearStart = new Date(VRO_DATA.latestDate.getFullYear(), 0, 1);
+          serviceNames.forEach(service => {
+            const firstProgramDate = matched?.vros
+              ?.filter(vro => vro.service === service)
+              .map(vro => vro.opened)
+              .filter(Boolean)
+              .sort((a,b) => a - b)[0];
 
-            if (firstDate < yearStart) {
-              document.getElementById("manualExistingCustomer").checked = true;
+            if (!firstProgramDate) return;
+
+            const existingField = document.getElementById(
+              serviceInputId(service, "existingProgram")
+            );
+            const launchField = document.getElementById(
+              serviceInputId(service, "launchDate")
+            );
+
+            if (firstProgramDate < yearStart) {
+              existingField.checked = true;
+              launchField.value = "";
             } else {
-              document.getElementById("manualLaunchDate").value = dateKey(firstDate);
+              existingField.checked = false;
+              launchField.value = dateKey(firstProgramDate);
             }
 
-            toggleLaunchDate();
-          }
+            toggleServiceLaunchDate(service);
+          });
         }
       }
 
@@ -2341,10 +2454,6 @@
       const recordId = document.getElementById("manualRecordId").value;
       const customer = document.getElementById("manualCustomerName").value.trim();
       const status = document.getElementById("manualStatus").value;
-      const existingCustomer = document.getElementById("manualExistingCustomer").checked;
-      const launchDate = existingCustomer
-        ? ""
-        : document.getElementById("manualLaunchDate").value;
       const services = {};
       let selectedCount = 0;
 
@@ -2359,8 +2468,19 @@
 
         selectedCount += 1;
 
+        const existingProgram = document.getElementById(
+          serviceInputId(service, "existingProgram")
+        ).checked;
+        const launchDate = existingProgram
+          ? ""
+          : document.getElementById(
+              serviceInputId(service, "launchDate")
+            ).value;
+
         services[service] = {
           enabled:true,
+          existingProgram,
+          launchDate,
           totalEstimatedDemand:readNumberInput(serviceInputId(service, "totalEstimatedDemand")),
           annualEstimatedRevenue:readNumberInput(serviceInputId(service, "annualEstimatedRevenue")),
           annualEstimatedMarginDollars:readNumberInput(serviceInputId(service, "annualEstimatedMarginDollars")),
@@ -2378,8 +2498,6 @@
       const payload = {
         customer,
         status,
-        existingCustomer,
-        launchDate,
         services,
         updatedAt:firebase.database.ServerValue.TIMESTAMP,
         updatedBy:firebase.auth().currentUser?.email || ""
